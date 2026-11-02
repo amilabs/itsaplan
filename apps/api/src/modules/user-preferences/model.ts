@@ -6,11 +6,15 @@ const Locale = t.Union([
   t.Literal('uk'),
   t.Literal('ru'),
   t.Literal('zh-CN'),
+  t.Literal('zh-TW'),
   t.Literal('ar'),
+  t.Literal('fa'),
   t.Literal('fr'),
   t.Literal('pt-BR'),
   t.Literal('id'),
   t.Literal('es-ES'),
+  t.Literal('ko'),
+  t.Literal('tr'),
 ]);
 const Theme = t.Union([t.Literal('light'), t.Literal('dark'), t.Literal('system')]);
 const IssueOpenMode = t.Union([t.Literal('panel'), t.Literal('page')]);

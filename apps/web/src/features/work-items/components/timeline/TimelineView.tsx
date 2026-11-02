@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { DndContext } from '@dnd-kit/core';
-import { useTranslations } from 'next-intl';
 import { buildMaps, issueColor, type WorkItemsViewProps } from '@/utils/project';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useGroupLabels } from '@/hooks/useGroupLabels';
@@ -11,8 +10,9 @@ import { TimelineHeader } from '@/components/common/timeline/TimelineHeader';
 import { TimelineLabelResizer } from '@/components/common/timeline/TimelineLabelResizer';
 import { useTimelineDrag } from '../../hooks/useTimelineDrag';
 import { useIssueReorder } from '../../hooks/useIssueReorder';
-import { buildTimeline, labelWidthKey, SCALE_DAY_W } from '../../utils/timeline';
+import { buildTimeline, labelWidthKey, SCALE_DAY_W, timelineColumns } from '../../utils/timeline';
 import { IssueDragOverlay } from '../shared/IssueDragOverlay';
+import { TimelineColumnHeader } from './TimelineColumnHeader';
 import { TimelineGroupRow } from './TimelineGroupRow';
 import { TimelineSubgroupRow } from './TimelineSubgroupRow';
 import { TimelineIssueBlock } from './TimelineIssueBlock';
@@ -31,6 +31,7 @@ interface TimelineViewProps extends WorkItemsViewProps {
 export default function TimelineView({
   project,
   filters,
+  customFields,
   settings,
   onOpenIssue,
   collapsedGroups,
@@ -38,7 +39,6 @@ export default function TimelineView({
   viewId,
   readOnly,
 }: TimelineViewProps) {
-  const t = useTranslations('workItems.timeline');
   const { can } = usePermissions(project);
   const groupLabels = useGroupLabels();
   const barsReadOnly = readOnly || !can('work_items', 'edit');
@@ -70,9 +70,12 @@ export default function TimelineView({
   const viewportW = useElementWidth(scrollRef);
 
   // Narrow the sticky label column on small screens so the day track is usable;
-  // on wider ones it is the width the grip was dragged to.
+  // on wider ones the title takes the width the grip was dragged to and the
+  // property columns follow it.
   const narrow = viewportW < 640;
-  const labelW = narrow ? LABEL_NARROW_W : titleWidth;
+  const titleW = narrow ? LABEL_NARROW_W : titleWidth;
+  const columns = narrow ? [] : timelineColumns(settings.properties, customFields);
+  const labelW = titleW + columns.reduce((sum, c) => sum + c.width, 0);
   const subgrouped = settings.group !== 'none' && settings.subgroup !== 'none';
   const { rows, days, months, trackWidth, todayLeft, todayInRange, dayLines, spanToRect } =
     buildTimeline({
@@ -108,12 +111,9 @@ export default function TimelineView({
             dayW={DAY_W}
             months={months}
             days={days}
+            corner={columns.length > 0 && <TimelineColumnHeader columns={columns} />}
           />
-          {!narrow && <TimelineLabelResizer labelW={labelW} onResize={setTitleWidth} />}
-
-          {rows.length === 0 && (
-            <div className="p-8 text-center text-sm text-muted-foreground">{t('empty')}</div>
-          )}
+          {!narrow && <TimelineLabelResizer labelW={titleW} onResize={setTitleWidth} />}
 
           {rows.map((row) => {
             if (row.kind === 'group') {
@@ -183,6 +183,7 @@ export default function TimelineView({
                   active={active}
                   indented={subgrouped}
                   labelW={labelW}
+                  columns={columns}
                   trackWidth={trackWidth}
                   dayLines={dayLines}
                   todayInRange={todayInRange}
@@ -192,10 +193,13 @@ export default function TimelineView({
                   onOpen={onOpenIssue}
                 />
                 <TimelineSubtaskRows
+                  project={project}
                   issueId={issue.id}
                   indented={subgrouped}
                   maps={maps}
                   labelW={labelW}
+                  columns={columns}
+                  readOnly={barsReadOnly}
                   trackWidth={trackWidth}
                   dayLines={dayLines}
                   todayInRange={todayInRange}
@@ -204,10 +208,13 @@ export default function TimelineView({
                   onOpen={onOpenIssue}
                 />
                 <TimelineLinkRows
+                  project={project}
                   links={issue.links}
                   indented={subgrouped}
                   maps={maps}
                   labelW={labelW}
+                  columns={columns}
+                  readOnly={barsReadOnly}
                   trackWidth={trackWidth}
                   dayLines={dayLines}
                   todayInRange={todayInRange}

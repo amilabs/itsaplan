@@ -101,6 +101,8 @@
     "unreachable": "Tidak dapat menjangkau agen. Coba lagi.",
     "runnerOffline": "Runner offline",
     "runnerOfflineHint": "Jalankan runner di mesin Anda untuk mengobrol dengan agen ini.",
+    "chatDisabled": "Agen ini tidak tersedia di obrolan",
+    "chatDisabledHint": "Obrolan untuk agen ini dinonaktifkan. Sebutan, delegasi, dan jadwal tetap berfungsi.",
     "attachFile": "Lampirkan spreadsheet, dokumen, PDF, atau file teks untuk dibaca agen",
     "removeAttachment": "Hapus lampiran",
     "uploadFailed": "Gagal mengunggah file.",
@@ -134,7 +136,9 @@
     "stopSharing": "Hentikan pembagian",
     "createLink": "Buat tautan",
     "copy": "Salin",
-    "copied": "Disalin"
+    "copied": "Disalin",
+    "calendarFeed": "Feed kalender",
+    "calendarFeedHint": "Salin tautan ini ke aplikasi kalender Anda untuk berlangganan tampilan ini."
   },
   "actions": "Tindakan",
   "clearSearch": "Bersihkan pencarian",
@@ -198,7 +202,8 @@
     "copiedLink": "Tersalin",
     "editLink": "Edit tautan",
     "retryPreview": "Coba lagi",
-    "copyLinkFailed": "Tautan tidak dapat disalin. Pilih dan salin URL di atas."
+    "copyLinkFailed": "Tautan tidak dapat disalin. Pilih dan salin URL di atas.",
+    "todoList": "Daftar tugas"
   },
   "chart": {
     "download": "Simpan grafik",
@@ -211,5 +216,7 @@
     "page": "Halaman {number}",
     "perPage": "per halaman",
     "range": "{first}-{last} dari {total}"
-  }
+  },
+  "aboutCloudAndPro": "Pelajari Cloud dan Pro",
+  "signingOut": "Sedang keluar…"
 }

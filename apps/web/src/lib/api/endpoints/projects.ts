@@ -1,6 +1,7 @@
 import type { CycleOption } from '@/lib/api/endpoints/cycles';
 import type { BoardIssues } from '@/lib/api/endpoints/issues';
 import { request } from '@/lib/api/core/client';
+import { pageQuery, type Page, type PageParams } from '@/lib/api/core/paging';
 import type { Column } from '@/lib/api/endpoints/columns';
 import type { CustomField } from '@/lib/api/endpoints/customFields';
 import type { IssueTemplate } from '@/lib/api/endpoints/issueTemplates';
@@ -50,14 +51,17 @@ export interface Project {
   // Whether members log the time they spend on the issues, set in the same place.
   // Independent of the time estimate.
   timeLoggingEnabled: boolean;
+  archivedAt: string | null;
   createdAt: string;
   // Latest work-item activity or comment, present on the project list response.
   lastActivityAt?: string | null;
   isFavorite?: boolean;
   isHidden?: boolean;
-  // The caller's role in this project. Only present on the /projects list
+  // The caller's role in this project, and whether it comes from their membership or
+  // only from their role in the workspace. Only present on the /projects list
   // response; absent on the create/copy responses.
   role?: MemberRole;
+  via?: AccessVia;
 }
 
 export interface Assignee {
@@ -72,6 +76,8 @@ export interface Assignee {
   // The user an 'owner'-scoped agent works for: delegating it to anyone else queues a
   // run its runner never receives. Null for members and team-scoped agents.
   restrictedToUserId: string | null;
+  // Whether @-mentioning this agent starts a run. Null for a person.
+  respondsToMention: boolean | null;
   // Whether this person may read issues and can therefore receive watcher
   // notifications without leaking work-item content.
   canReadWorkItems: boolean;
@@ -87,7 +93,12 @@ export interface ProjectViewer {
   // project's own owner; 'agent' is a bot user reading its own board, which governs
   // nothing.
   teamRole: TeamRole | 'agent' | null;
+  // 'workspace' when the caller is not a member of the project and reaches it through
+  // their role in the workspace that holds it.
+  via: AccessVia;
 }
+
+export type AccessVia = 'member' | 'workspace';
 
 // The board scaffold, returned by getProject: everything the work-items UI needs
 // except the issues themselves (those come from getBoardIssues).
@@ -120,6 +131,31 @@ export interface ProjectDefaults {
 }
 
 export const listProjects = () => request<Project[]>('/projects');
+
+export type ProjectSort = 'key' | 'name' | 'created' | 'activity';
+
+export interface ProjectSearchFilters {
+  q?: string;
+  sort?: ProjectSort;
+  workspaceId?: number;
+  teamId?: number;
+  ids?: number[];
+  favorite?: boolean;
+  hidden?: boolean;
+}
+
+export const searchProjects = (filters: ProjectSearchFilters, params: PageParams) =>
+  request<Page<Project>>(
+    `/projects/search${pageQuery(params, {
+      q: filters.q,
+      sort: filters.sort,
+      workspaceId: filters.workspaceId?.toString(),
+      teamId: filters.teamId?.toString(),
+      ids: filters.ids?.join(','),
+      favorite: filters.favorite?.toString(),
+      hidden: filters.hidden?.toString(),
+    })}`,
+  );
 
 export type ProjectPreferencePatch = { isFavorite?: boolean; isHidden?: boolean };
 

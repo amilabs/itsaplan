@@ -1,25 +1,42 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { removeMember } from '@/lib/api/endpoints/members';
 import {
-  type CopyProjectIncludeKey,
   createTeamProject,
   copyTeamProject,
   updateTeamProject,
+  archiveTeamProject,
+  restoreTeamProject,
   deleteTeamProject,
 } from '@/lib/api/endpoints/teams';
 import {
   type Project,
   type ProjectPreferencePatch,
+  type ProjectSearchFilters,
   listProjects,
+  searchProjects,
   getProject,
   getBoardIssues,
   updateProject,
   updateProjectPreferences,
 } from '@/lib/api/endpoints/projects';
+import { nextPageParam } from '@/lib/api/core/paging';
 import { qk } from '@/services/queryKeys';
 
 export function useProjectsQuery() {
   return useQuery({ queryKey: qk.projects, queryFn: () => listProjects() });
+}
+
+const PROJECT_SEARCH_PAGE = 30;
+
+export function useProjectSearchQuery(filters: ProjectSearchFilters, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: qk.projectSearch(filters),
+    queryFn: ({ pageParam }) =>
+      searchProjects(filters, { page: pageParam, pageSize: PROJECT_SEARCH_PAGE }),
+    initialPageParam: 1,
+    getNextPageParam: nextPageParam,
+    enabled,
+  });
 }
 
 export function useUpdateProjectPreferences() {
@@ -92,8 +109,9 @@ export function useCreateProject() {
         key: string;
         name: string;
         description?: string;
-        include?: Partial<Record<CopyProjectIncludeKey, boolean>>;
+        include?: Record<string, boolean>;
         preset?: string;
+        templateId?: number;
       };
     }) =>
       copyFromId == null
@@ -174,6 +192,27 @@ export function useUpdateTeamProject() {
       if (updated.ref !== projectKey) qc.removeQueries({ queryKey: qk.project(projectKey) });
       else void qc.invalidateQueries({ queryKey: qk.project(projectKey) });
       void qc.invalidateQueries({ queryKey: qk.team(teamId) });
+    },
+  });
+}
+
+// The project list carries only active projects, so it is refetched either way.
+export function useSetTeamProjectArchived() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      teamId,
+      projectId,
+      archived,
+    }: {
+      teamId: number;
+      projectId: number;
+      archived: boolean;
+    }) =>
+      archived ? archiveTeamProject(teamId, projectId) : restoreTeamProject(teamId, projectId),
+    onSuccess: (_project, { teamId }) => {
+      void qc.invalidateQueries({ queryKey: qk.projects });
+      void qc.invalidateQueries({ queryKey: qk.anyTeamProjects(teamId) });
     },
   });
 }

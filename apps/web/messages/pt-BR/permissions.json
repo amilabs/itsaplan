@@ -17,6 +17,7 @@
     "integrations": "Integrações",
     "agent_skills": "Habilidades de agente",
     "agent_tools": "Ferramentas de agente",
+    "agent_usage": "Consumo dos agentes",
     "custom_fields": "Campos personalizados",
     "issue_templates": "Modelos de issue",
     "workflow_config": "Configuração de fluxo de trabalho",
@@ -48,5 +49,16 @@
   "allowed": "permitido",
   "notAllowed": "não permitido",
   "accessHeading": "Acesso a este projeto",
-  "joined": "entrou em {date}"
+  "joined": "entrou em {date}",
+  "editor": {
+    "titleEdit": "Editar função",
+    "titleNew": "Nova função",
+    "namePlaceholder": "ex. Colaborador",
+    "toggleActionAll": "Alternar {action} para todos os recursos",
+    "toggleGroupAll": "Alternar todas as permissões de {group}",
+    "toggleActionGroup": "Alternar {action} para {group}",
+    "cellAria": "{resource}: {action}",
+    "saveRole": "Salvar função",
+    "createRole": "Criar função"
+  }
 }

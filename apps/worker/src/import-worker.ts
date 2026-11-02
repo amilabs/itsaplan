@@ -1,12 +1,12 @@
-import { pinnedFetch } from '@repo/net';
 import { getStorageSettings, mimeAllowed, MB } from '@repo/db';
 import { startPollLoop, type WorkerHandle } from './poll-loop';
 import { intEnv } from './env';
-import { equalJitterBackoffMs } from './backoff';
-import { PlaneReader, PlaneRateLimitedError } from './plane-adapter';
+import { tickErrorOutcome } from './import-retry';
+import { readerForJob, sourceProjectKeyForJob, type CommonImportConfig } from './import-sources';
 import type { SourceReader } from './reader';
-import type { CanonicalComment, CanonicalStateCategory } from './canonical';
+import type { CanonicalChecklist, CanonicalComment, CanonicalIssue } from './canonical';
 import { extractCrossReferences, applyCrossReferenceReplacements } from './cross-reference';
+import { downloadAttachment } from './attachment-download';
 import {
   claimDueImportJobs,
   decryptImportCredential,
@@ -19,6 +19,7 @@ import {
   upsertImportRecord,
   findImportRecord,
   findImportRecordByDisplayId,
+  listImportRecords,
   listUncreatedImportRecords,
   listCreatedImportRecords,
   firstProjectColumnId,
@@ -32,6 +33,10 @@ import {
   createLocalCycleAndRecord,
   createLocalIssueAndRecord,
   setIssueLabels,
+  addIssueWatchers,
+  createLocalCustomFieldAndRecord,
+  setIssueCustomFieldValue,
+  createLocalChecklistAndRecord,
   setIssueParentIfUnset,
   createLocalComment,
   createIssueLink,
@@ -41,7 +46,7 @@ import {
   type ClaimedImportJob,
 } from './import-store';
 
-// The poll loop that drives a Plane import through its phases: discover ->
+// The poll loop that drives a source import through its phases: discover ->
 // create -> link -> rewrite -> attachments -> done. Follows the same claim-a-lease,
 // bounded-chunk-per-tick shape as worker.ts and agent-worker.ts. Each tick
 // claims at most one due import_job and advances it by one bounded unit of
@@ -55,11 +60,6 @@ export function startImportWorker(): WorkerHandle {
 // additional Plane requests (comments, attachments, relations) against a
 // ~60 requests/minute budget, so this stays well under the discover page size.
 const ISSUES_PER_TICK = 15;
-// import_store.ts resets job.attempts to 0 on every tick that makes progress
-// (saveImportJobCursor/advanceImportJobPhase), so this counts consecutive
-// failed ticks, not total ticks claimed over the job's life — a multi-tick
-// import doesn't fail itself out just by running long.
-const MAX_ATTEMPTS = 10;
 
 async function tick(): Promise<void> {
   const [job] = await claimDueImportJobs();
@@ -91,37 +91,16 @@ async function tick(): Promise<void> {
 }
 
 async function handleTickError(job: ClaimedImportJob, error: unknown): Promise<void> {
-  if (error instanceof PlaneRateLimitedError) {
-    await retryImportJobLater(job.id, error.retryAfterMs, 'rate limited');
+  const outcome = tickErrorOutcome(error, job.attempts);
+  if (outcome.action === 'fail') {
+    await failImportJob(job.id, outcome.lastError);
     return;
   }
-  const message = error instanceof Error ? error.message : String(error);
-  if (job.attempts >= MAX_ATTEMPTS) {
-    await failImportJob(job.id, message);
-    return;
-  }
-  await retryImportJobLater(job.id, equalJitterBackoffMs(job.attempts), message);
-}
-
-interface PlaneImportConfig {
-  planeProjectId: string;
-  // The source project's own short identifier (Plane's "identifier", e.g. "ROOMS"),
-  // stored at job creation for the Rewrite phase to build "ROOMS-524"-style
-  // cross-reference patterns from. Optional: a job created before this existed has
-  // none, and Rewrite is a no-op for it rather than a failure.
-  planeProjectKey?: string;
-  // Set from the mapping review step at job creation. Both are optional and default
-  // to itsaplan's automatic mapping when absent.
-  unmatchedUserPolicy?: 'unassigned' | 'skip';
-  stateOverrides?: Record<string, CanonicalStateCategory>;
+  await retryImportJobLater(job.id, outcome.delayMs, outcome.lastError, outcome.countsAsAttempt);
 }
 
 function buildReader(job: ClaimedImportJob): SourceReader {
-  const credential = decryptImportCredential(job);
-  const config = job.config as Partial<PlaneImportConfig>;
-  if (!config.planeProjectId)
-    throw new Error(`import job ${job.id} has no source project configured`);
-  return new PlaneReader(credential, config.planeProjectId);
+  return readerForJob(job, decryptImportCredential(job));
 }
 
 // --- Discover: snapshot every source id up front, writing import_record rows
@@ -138,10 +117,11 @@ interface DiscoverCursor {
 async function runDiscover(job: ClaimedImportJob, reader: SourceReader): Promise<void> {
   const cursor = job.cursor as Partial<DiscoverCursor>;
   if (cursor.subphase !== 'issues') {
-    const [states, labels, cycles] = await Promise.all([
+    const [states, labels, cycles, customFields] = await Promise.all([
       reader.listStates(),
       reader.listLabels(),
       reader.listCycles(),
+      reader.listCustomFields(),
     ]);
     await insertDiscoveredIds(
       job.id,
@@ -157,6 +137,11 @@ async function runDiscover(job: ClaimedImportJob, reader: SourceReader): Promise
       job.id,
       'cycle',
       cycles.map((c) => c.sourceId),
+    );
+    await insertDiscoveredIds(
+      job.id,
+      'custom_field',
+      customFields.map((f) => f.sourceId),
     );
     const next: DiscoverCursor = { subphase: 'issues', planeCursor: null };
     await saveImportJobCursor(job.id, next);
@@ -177,22 +162,23 @@ async function runDiscover(job: ClaimedImportJob, reader: SourceReader): Promise
   await saveImportJobCursor(job.id, next);
 }
 
-// --- Create: materialize states/labels/cycles once (cheap, unpaginated),
-// then create one chunk of not-yet-created issues per tick, with their
+// --- Create: materialize states/labels/cycles/custom fields once (cheap, unpaginated),
+// then finish one chunk of issues per tick, with their
 // comments and their attachment metadata (byte download is a later phase).
 
 interface RecordCursor {
   lastRecordId: number;
 }
 
-async function runCreate(job: ClaimedImportJob, reader: SourceReader): Promise<void> {
+export async function runCreate(job: ClaimedImportJob, reader: SourceReader): Promise<void> {
   await materializeStates(job, reader);
   await materializeLabels(job, reader);
   await materializeCycles(job, reader);
+  await materializeCustomFields(job, reader);
 
   const cursor = job.cursor as Partial<RecordCursor>;
   const afterId = cursor.lastRecordId ?? 0;
-  const pending = await listUncreatedImportRecords(job.id, 'issue', afterId, ISSUES_PER_TICK);
+  const pending = await listImportRecords(job.id, 'issue', afterId, ISSUES_PER_TICK);
   if (pending.length === 0) {
     await advanceImportJobPhase(job.id, 'link', {});
     return;
@@ -211,7 +197,7 @@ async function runCreate(job: ClaimedImportJob, reader: SourceReader): Promise<v
 async function materializeStates(job: ClaimedImportJob, reader: SourceReader): Promise<void> {
   const pending = await listUncreatedImportRecords(job.id, 'state', 0, 1000);
   if (pending.length === 0) return;
-  const overrides = (job.config as Partial<PlaneImportConfig>).stateOverrides ?? {};
+  const overrides = (job.config as CommonImportConfig).stateOverrides ?? {};
   const states = new Map((await reader.listStates()).map((s) => [s.sourceId, s]));
   for (const record of pending) {
     const state = states.get(record.sourceId);
@@ -247,57 +233,118 @@ async function materializeCycles(job: ClaimedImportJob, reader: SourceReader): P
   }
 }
 
+async function materializeCustomFields(job: ClaimedImportJob, reader: SourceReader): Promise<void> {
+  const pending = await listUncreatedImportRecords(job.id, 'custom_field', 0, 1000);
+  if (pending.length === 0) return;
+  const fields = new Map((await reader.listCustomFields()).map((f) => [f.sourceId, f]));
+  for (const record of pending) {
+    const field = fields.get(record.sourceId);
+    if (!field) continue;
+    await createLocalCustomFieldAndRecord(job.id, record.sourceId, job.projectId, field);
+  }
+}
+
 async function createOneIssue(
   job: ClaimedImportJob,
   reader: SourceReader,
   sourceId: string,
 ): Promise<void> {
   const canonical = await reader.getIssue(sourceId);
+  // Fetch source data before writing local rows; a failed read leaves no partial writes.
+  const comments = await reader.listIssueComments(sourceId);
+  const attachments = await reader.listIssueAttachments(sourceId);
+  const checklists = await reader.listIssueChecklists(sourceId);
 
-  const stateRecord = await findImportRecord(job.id, 'state', canonical.stateSourceId);
-  const columnId = stateRecord?.localId ?? (await firstProjectColumnId(job.projectId));
-  if (columnId == null)
-    throw new Error(`project ${job.projectId} has no workflow column to import into`);
+  const existing = await findImportRecord(job.id, 'issue', sourceId);
+  let localId = existing?.localId;
+  if (localId == null) {
+    const stateRecord = await findImportRecord(job.id, 'state', canonical.stateSourceId);
+    const columnId = stateRecord?.localId ?? (await firstProjectColumnId(job.projectId));
+    if (columnId == null)
+      throw new Error(`project ${job.projectId} has no workflow column to import into`);
 
-  const cycleRecord = canonical.cycleSourceId
-    ? await findImportRecord(job.id, 'cycle', canonical.cycleSourceId)
-    : null;
-  const parentRecord = canonical.parentSourceId
-    ? await findImportRecord(job.id, 'issue', canonical.parentSourceId)
-    : null;
-  const assigneeUserId = canonical.assigneeEmail
-    ? await findProjectMemberUserId(job.projectId, canonical.assigneeEmail)
-    : null;
+    const cycleRecord = canonical.cycleSourceId
+      ? await findImportRecord(job.id, 'cycle', canonical.cycleSourceId)
+      : null;
+    const parentRecord = canonical.parentSourceId
+      ? await findImportRecord(job.id, 'issue', canonical.parentSourceId)
+      : null;
+    const assigneeUserId = canonical.assigneeEmail
+      ? await findProjectMemberUserId(job.projectId, canonical.assigneeEmail)
+      : null;
 
+    localId = await createLocalIssueAndRecord(job.id, sourceId, String(canonical.sequenceId), {
+      projectId: job.projectId,
+      columnId,
+      cycleId: cycleRecord?.localId ?? null,
+      parentId: parentRecord?.localId ?? null,
+      assigneeUserId,
+      title: canonical.title,
+      description: canonical.descriptionMarkdown,
+      priority: canonical.priority,
+      startDate: canonical.startDate,
+      dueDate: canonical.dueDate,
+      createdAt: canonical.createdAt,
+      updatedAt: canonical.updatedAt,
+      archivedAt: canonical.archivedAt,
+    });
+  }
   const labelIds: number[] = [];
   for (const labelSourceId of canonical.labelSourceIds) {
     const record = await findImportRecord(job.id, 'label', labelSourceId);
     if (record?.localId != null) labelIds.push(record.localId);
   }
-
-  const localId = await createLocalIssueAndRecord(job.id, sourceId, String(canonical.sequenceId), {
-    projectId: job.projectId,
-    columnId,
-    cycleId: cycleRecord?.localId ?? null,
-    parentId: parentRecord?.localId ?? null,
-    assigneeUserId,
-    title: canonical.title,
-    description: canonical.descriptionMarkdown,
-    priority: canonical.priority,
-    startDate: canonical.startDate,
-    dueDate: canonical.dueDate,
-  });
   if (labelIds.length) await setIssueLabels(localId, labelIds);
 
-  await createComments(job, localId, await reader.listIssueComments(sourceId));
+  await addWatchers(job, localId, canonical.watcherEmails);
+  await setCustomFieldValues(job, localId, canonical.customFields);
+  await createChecklists(job, localId, checklists);
+  await createComments(job, localId, comments);
 
-  const attachments = await reader.listIssueAttachments(sourceId);
   if (attachments.length) {
     await insertDiscoveredIds(
       job.id,
       'attachment',
       attachments.map((a) => a.sourceId),
     );
+  }
+}
+
+async function addWatchers(
+  job: ClaimedImportJob,
+  issueLocalId: number,
+  emails: string[],
+): Promise<void> {
+  const userIds: string[] = [];
+  for (const email of emails) {
+    const userId = await findProjectMemberUserId(job.projectId, email);
+    if (userId) userIds.push(userId);
+  }
+  await addIssueWatchers(issueLocalId, userIds);
+}
+
+async function setCustomFieldValues(
+  job: ClaimedImportJob,
+  issueLocalId: number,
+  values: CanonicalIssue['customFields'],
+): Promise<void> {
+  for (const { fieldSourceId, value } of values) {
+    if (value === null || value === '') continue;
+    const record = await findImportRecord(job.id, 'custom_field', fieldSourceId);
+    if (record?.localId == null) continue;
+    await setIssueCustomFieldValue(issueLocalId, record.localId, value);
+  }
+}
+
+async function createChecklists(
+  job: ClaimedImportJob,
+  issueLocalId: number,
+  checklists: CanonicalChecklist[],
+): Promise<void> {
+  for (const checklist of checklists) {
+    if ((await findImportRecord(job.id, 'checklist', checklist.sourceId))?.localId != null)
+      continue;
+    await createLocalChecklistAndRecord(job.id, issueLocalId, checklist);
   }
 }
 
@@ -311,7 +358,7 @@ async function createComments(
   issueLocalId: number,
   comments: CanonicalComment[],
 ): Promise<void> {
-  const unmatchedUserPolicy = (job.config as Partial<PlaneImportConfig>).unmatchedUserPolicy;
+  const unmatchedUserPolicy = (job.config as CommonImportConfig).unmatchedUserPolicy;
   const localIdBySourceId = new Map<string, number>();
   for (const comment of comments) {
     const existing = await findImportRecord(job.id, 'comment', comment.sourceId);
@@ -330,6 +377,7 @@ async function createComments(
       ? (localIdBySourceId.get(comment.replyToSourceId) ?? null)
       : null;
     const localId = await createLocalComment(
+      job.id,
       issueLocalId,
       authorUserId,
       comment.authorName,
@@ -382,10 +430,13 @@ async function runLink(job: ClaimedImportJob, reader: SourceReader): Promise<voi
 // project's own identifier. Purely local: everything it needs was captured
 // during Create/Link, so it makes no further Plane requests.
 
+// A mention of the issue whose own text this is stays as written: it is how a
+// source records the issue's own identifier ("Imported from Linear: ATO-505").
 async function rewriteCrossReferences(
   jobId: number,
   sourceProjectKey: string,
   localProjectKey: string,
+  issueLocalId: number,
   text: string,
 ): Promise<string> {
   const references = extractCrossReferences(text, sourceProjectKey);
@@ -394,7 +445,7 @@ async function rewriteCrossReferences(
   const replacements = new Map<string, string>();
   for (const { reference, sequenceId } of references) {
     const record = await findImportRecordByDisplayId(jobId, 'issue', sequenceId);
-    if (record?.localId == null) continue;
+    if (record?.localId == null || record.localId === issueLocalId) continue;
     const targetSequence = await getIssueSequenceNumber(record.localId);
     if (targetSequence == null) continue;
     replacements.set(reference, `${localProjectKey}-${targetSequence}`);
@@ -402,7 +453,7 @@ async function rewriteCrossReferences(
   return applyCrossReferenceReplacements(text, sourceProjectKey, replacements);
 }
 
-async function runRewrite(job: ClaimedImportJob): Promise<void> {
+export async function runRewrite(job: ClaimedImportJob): Promise<void> {
   const cursor = job.cursor as Partial<RecordCursor>;
   const afterId = cursor.lastRecordId ?? 0;
   const pending = await listCreatedImportRecords(job.id, 'issue', afterId, ISSUES_PER_TICK);
@@ -411,9 +462,9 @@ async function runRewrite(job: ClaimedImportJob): Promise<void> {
     return;
   }
 
-  // A job created before this phase existed has no planeProjectKey — its
+  // A job created before this phase existed has no source project key — its
   // description/comment text is left exactly as Create wrote it.
-  const sourceProjectKey = (job.config as Partial<PlaneImportConfig>).planeProjectKey;
+  const sourceProjectKey = sourceProjectKeyForJob(job);
   if (sourceProjectKey) {
     const localProjectKey = await getProjectKey(job.projectId);
     for (const record of pending) {
@@ -422,6 +473,7 @@ async function runRewrite(job: ClaimedImportJob): Promise<void> {
         job.id,
         sourceProjectKey,
         localProjectKey,
+        record.localId,
         description,
       );
       if (nextDescription !== description) {
@@ -432,6 +484,7 @@ async function runRewrite(job: ClaimedImportJob): Promise<void> {
           job.id,
           sourceProjectKey,
           localProjectKey,
+          record.localId,
           comment.body,
         );
         if (nextBody !== comment.body) await updateCommentBody(comment.id, nextBody);
@@ -479,12 +532,11 @@ async function runAttachments(job: ClaimedImportJob, reader: SourceReader): Prom
             `"${attachment.filename}" is type "${attachment.contentType}", not accepted on this instance`,
           );
         }
-        const url = await reader.resolveAttachmentDownloadUrl(record.sourceId, attachment.sourceId);
-        const res = await pinnedFetch(url, {
-          timeoutMs: 30_000,
-          maxBytes: limits.maxAttachmentMb * MB,
-        });
-        const bytes = Buffer.from(await res.arrayBuffer());
+        const download = await reader.resolveAttachmentDownload(
+          record.sourceId,
+          attachment.sourceId,
+        );
+        const bytes = await downloadAttachment(download, limits.maxAttachmentMb * MB);
         await createLocalAttachmentAndRecord(job.id, attachment.sourceId, {
           projectId: job.projectId,
           issueId: record.localId,

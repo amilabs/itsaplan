@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { api, authedApi, type Api } from '#tests/helpers/app';
+import { api, authedApi, type Api, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { createRole } from '#tests/helpers/roles';
@@ -19,7 +19,7 @@ interface Setup {
 async function setup(key = 'MKT'): Promise<Setup> {
   const u = await signUpTestUser();
   const asOwner = authedApi(u.cookie);
-  await asOwner.projects.post({ key, name: 'Marketing' });
+  await createProject(asOwner, { key, name: 'Marketing' });
   const view = await asOwner.projects({ projectKey: key }).get();
   return {
     asOwner,
@@ -329,6 +329,55 @@ describe('sync', () => {
     });
   });
 
+  describe('inbox:all scope', () => {
+    // A member of MKT who also joins OPS, a second project of the same team.
+    async function twoProjects() {
+      const base = await setup();
+      const { userId, api: asMember } = await addMember(base.asOwner);
+      await createProject(base.asOwner, { key: 'OPS', name: 'Operations' });
+      const ops = base.asOwner.projects({ projectKey: 'OPS' });
+      await ops.members.post({ userId, role: 'member' });
+      const opsColumnId = (await ops.get()).data!.columns[0].id;
+      const notifyInOps = () =>
+        ops.issues.post({ columnId: opsColumnId, title: 'Task', assigneeUserId: userId });
+      return { ...base, userId, asMember, ops, notifyInOps };
+    }
+
+    it('moves when an inbox in any of the projects moves', async () => {
+      const { asOwner, columnId, userId, asMember, notifyInOps } = await twoProjects();
+
+      const initial = await rev(asMember, 'inbox:all');
+      await createIssue(asOwner, columnId, { assigneeUserId: userId });
+      const afterMkt = await rev(asMember, 'inbox:all');
+      expect(afterMkt).not.toBe(initial);
+
+      await notifyInOps();
+      expect(await rev(asMember, 'inbox:all')).not.toBe(afterMkt);
+    });
+
+    it('leaves out a project the user can no longer read', async () => {
+      const { asOwner, columnId, userId, asMember, ops, notifyInOps } = await twoProjects();
+      await createIssue(asOwner, columnId, { assigneeUserId: userId });
+      const mktOnly = await rev(asMember, 'inbox:all');
+
+      await notifyInOps();
+      expect(await rev(asMember, 'inbox:all')).not.toBe(mktOnly);
+
+      expect((await ops.members({ userId }).delete()).status).toBe(204);
+      expect(await rev(asMember, 'inbox:all')).toBe(mktOnly);
+    });
+
+    it("never reads someone else's inbox", async () => {
+      const { asOwner, columnId } = await setup();
+      const { userId } = await addMember(asOwner);
+      const before = await rev(asOwner, 'inbox:all');
+
+      await createIssue(asOwner, columnId, { assigneeUserId: userId });
+
+      expect(await rev(asOwner, 'inbox:all')).toBe(before);
+    });
+  });
+
   describe('access', () => {
     it('reads a non-member\'s project as "0"', async () => {
       const { asOwner, projectId, columnId } = await setup();
@@ -395,7 +444,7 @@ describe('sync', () => {
 
       // A fresh project with the same key gets fresh markers: the caller is a member
       // again, so a leftover row would show up here.
-      await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(asOwner, { key: 'MKT', name: 'Marketing' });
       const view = await asOwner.projects({ projectKey: 'MKT' }).get();
       expect(await rev(asOwner, `board:${view.data!.project.id}`)).toBe('0');
       expect(await rev(asOwner, `issue:${issue.id}`)).toBe('0');

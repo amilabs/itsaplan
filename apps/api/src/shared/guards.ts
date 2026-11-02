@@ -1,4 +1,5 @@
 import { Elysia, type DocumentDecoration } from 'elysia';
+import { workspaceScim as isScimPerWorkspace } from '@repo/auth';
 import { authContext } from './auth-context';
 import {
   requireProjectAccess,
@@ -12,14 +13,15 @@ import {
   requireTeamPermission,
   assertPermission,
   assertMcpEnabled,
+  assertWritable,
   assertFeatureEnabled,
-  assertProjectFeature,
   type AuthUser,
 } from './access';
 import type { ProjectFeature } from './features';
-import { getProjectById } from '#modules/projects/service';
+import { getProjectById, type ProjectRow } from '#modules/projects/service';
 import { runsTeam, teamMcpEnabled } from '#modules/teams/service';
-import { isMcpRequest } from './mcp-request';
+import { requireWorkspaceManager } from '#modules/workspaces/service';
+import { boundProjectId, isMcpRequest } from './mcp-request';
 import { HttpError } from './lib';
 import type { PermissionResource, PermissionAction } from './permissions';
 
@@ -57,7 +59,8 @@ function permissionDetail(permission: Permission) {
 
 // Builds a feature-local macro for routes that address an entity by its own id
 // (no :projectKey in the path). resolveProjectId maps the route params to the
-// entity's owning project id (null means the entity was not found). The macro
+// entity's owning project id (null means the entity was not found); it is handed the
+// caller too, for an entity that only some members may see. The macro
 // asserts the given action on `resource` and injects the resolved `projectId` into
 // the handler context, so a handler that needs it does not resolve it again. `feature`
 // names the optional section the entity belongs to, closing every route of the macro
@@ -71,29 +74,59 @@ function permissionDetail(permission: Permission) {
 export function entityGuard(
   resource: PermissionResource,
   notFound: string,
-  resolveProjectId: (params: Record<string, string>) => Promise<number | null>,
+  resolveProjectId: (
+    params: Record<string, string>,
+    user: AuthUser | null | undefined,
+  ) => Promise<number | null>,
   feature?: ProjectFeature,
 ) {
   return (action: PermissionAction) => ({
     ...permissionDetail([resource, action]),
     async resolve({ params, user, request }: EntityGuardCtx) {
-      const projectId = await resolveProjectId(params as Record<string, string>);
+      const projectId = await resolveProjectId(params as Record<string, string>, user);
       if (projectId == null) throw new HttpError(404, notFound);
       await assertPermission(projectId, user, resource, action);
-      if (feature) await assertProjectFeature(projectId, feature);
-      await assertMcpAllowed(projectId, request.headers);
+      await assertProjectReachable(projectId, request, feature);
       return { projectId };
     },
   });
 }
 
-// The per-project MCP toggle, for a route or a guard that resolved the project by
-// its id rather than through one of the :projectKey macros. A plain request passes
-// untouched.
+// What a route that resolved its project by an object's id checks on it: the section
+// it belongs to, the run binding and the MCP toggle (see assertMcpAllowed), and that an
+// archived project is not written to. The project is read once, and only when a check
+// needs it.
+export async function assertProjectReachable(
+  projectId: number,
+  request: Request,
+  feature?: ProjectFeature,
+): Promise<void> {
+  const mcp = isMcpRequest(request.headers);
+  const reads = request.method === 'GET' || request.method === 'HEAD';
+  const project = feature || mcp || !reads ? await getProjectById(projectId) : null;
+  if (project && feature) assertFeatureEnabled(project, feature);
+  assertBoundProject(projectId, request.headers);
+  if (!project) return;
+  assertMcpEnabled(project, mcp);
+  assertWritable(project, request.method);
+}
+
+// What the request carries about the project, for a route or a guard that resolved the
+// project by an object's id rather than through one of the :projectKey macros: an
+// internal agent's run is bound to its own project, and an MCP call obeys the
+// per-project MCP toggle. A plain request passes untouched.
 export async function assertMcpAllowed(projectId: number, headers: Headers): Promise<void> {
+  assertBoundProject(projectId, headers);
   if (!isMcpRequest(headers)) return;
   const project = await getProjectById(projectId);
   if (project) assertMcpEnabled(project, true);
+}
+
+function assertBoundProject(projectId: number, headers: Headers): void {
+  const bound = boundProjectId(headers);
+  if (bound != null && bound !== projectId) {
+    throw new HttpError(403, 'Outside the project this run works in');
+  }
 }
 
 // The path param carried by every project-scoped route. The macros read it off
@@ -104,6 +137,8 @@ type ProjectKeyParams = { projectKey: string };
 // The path param carried by every team-scoped route, and its resolution to the
 // caller's membership — shared by the three team macros below.
 type TeamIdParams = { teamId: string };
+
+type WorkspaceIdParams = { workspaceId: string };
 
 function resolveTeam(params: unknown, user: AuthUser | undefined | null) {
   return requireTeamMembership(Number((params as TeamIdParams).teamId), user);
@@ -141,6 +176,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
       async resolve({ params, user, request }) {
         const project = await requireProjectAccess((params as ProjectKeyParams).projectKey, user);
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        assertWritable(project, request.method);
         return { project };
       },
     };
@@ -148,13 +184,16 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
 
   // The optional section a route belongs to, set beside the permission the route
   // asserts. A section its project has turned off closes its routes, so what the
-  // settings page hides cannot be reached through the API either. It resolves the
-  // project through the membership check as well, so it belongs on a route that
-  // already requires membership — not on one a team owner reaches without it.
+  // settings page hides cannot be reached through the API either. It reads the project
+  // the route's guard resolved when that guard is set before it in the route options;
+  // otherwise it resolves the project through the membership check itself, so it
+  // belongs on a route that already requires membership.
   feature(name: ProjectFeature) {
     return {
-      async resolve({ params, user }) {
-        const project = await requireProjectAccess((params as ProjectKeyParams).projectKey, user);
+      async resolve(ctx) {
+        const project =
+          (ctx as { project?: ProjectRow }).project ??
+          (await requireProjectAccess((ctx.params as ProjectKeyParams).projectKey, ctx.user));
         assertFeatureEnabled(project, name);
       },
     };
@@ -172,6 +211,8 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
           permission[1],
         );
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        // Deleting the project is the one change an archived project still takes.
+        if (permission[0] !== 'danger_zone') assertWritable(project, request.method);
         return { project };
       },
     };
@@ -185,6 +226,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
       async resolve({ params, user, request }) {
         const project = await requireProjectOwner((params as ProjectKeyParams).projectKey, user);
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        assertWritable(project, request.method);
         return { project };
       },
     };
@@ -197,6 +239,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
       async resolve({ params, user, request }) {
         const project = await requireProjectAdmin((params as ProjectKeyParams).projectKey, user);
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        assertWritable(project, request.method);
         return { project };
       },
     };
@@ -204,6 +247,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
 
   // A project the caller's team runs, for what follows their rank in the team rather
   // than any project role: copying the project into one of their own.
+  // Copying only reads the source, so an archived project can still be copied.
   teamRunsProject(_enabled: boolean) {
     return {
       async resolve({ params, user, request }) {
@@ -229,6 +273,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
           permission[1],
         );
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        assertWritable(project, request.method);
         return { project };
       },
     };
@@ -247,6 +292,7 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
           permission[1],
         );
         assertMcpEnabled(project, isMcpRequest(request.headers));
+        assertWritable(project, request.method);
         return { project };
       },
     };
@@ -295,6 +341,56 @@ export const guards = new Elysia({ name: 'guards' }).use(authContext).macro({
         );
         await assertTeamMcpAllowed(params, request.headers);
         return { membership };
+      },
+    };
+  },
+
+  // The workspace's owner or an admin. The workspace macros inject the resolved
+  // `standing` into the handler context.
+  workspaceManager(_enabled: boolean) {
+    return {
+      async resolve({ params, user }) {
+        const standing = await requireWorkspaceManager(
+          Number((params as WorkspaceIdParams).workspaceId),
+          user,
+        );
+        return { standing };
+      },
+    };
+  },
+
+  // Only the owner appoints and removes the admins.
+  workspaceOwner(_enabled: boolean) {
+    return {
+      async resolve({ params, user }) {
+        const standing = await requireWorkspaceManager(
+          Number((params as WorkspaceIdParams).workspaceId),
+          user,
+        );
+        if (standing.role !== 'owner')
+          throw new HttpError(403, 'Only the workspace owner can do this');
+        return { standing };
+      },
+    };
+  },
+
+  // A workspace's own SCIM, where a build sets SCIM up per workspace (setWorkspaceScim in
+  // @repo/auth). Its provider attaches accounts to the workspace, so only the owner sets
+  // it up. Without it SCIM is the instance's, set up in god mode.
+  workspaceScim(_enabled: boolean) {
+    return {
+      async resolve({ params, user }) {
+        const standing = await requireWorkspaceManager(
+          Number((params as WorkspaceIdParams).workspaceId),
+          user,
+        );
+        if (!isScimPerWorkspace()) {
+          throw new HttpError(403, 'SCIM is set up for the whole instance in god mode');
+        }
+        if (standing.role !== 'owner') {
+          throw new HttpError(403, 'Only the workspace owner sets up SCIM provisioning');
+        }
+        return { standing };
       },
     };
   },

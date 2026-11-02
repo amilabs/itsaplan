@@ -21,6 +21,10 @@ export interface AgentProject {
   name: string;
 }
 
+// How much a reasoning model thinks before it answers. Null on an agent leaves it to
+// the provider's default.
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
 // An AI agent of a team: a bot user plus its configuration. `kind` is
 // 'external' (driven by an outside caller through the API) or 'internal' (run by
 // the built-in runtime, so it carries provider/model/instructions/tools). Only an
@@ -42,12 +46,16 @@ export interface AiAgent {
   instructions: string | null;
   tools: string[];
   temperature: number | null;
+  reasoningEffort: ReasoningEffort | null;
   maxSteps: number | null;
+  runTimeoutSec: number | null;
   memoryEnabled: boolean;
   memoryLastMessages: number | null;
   // Run triggers.
   triggerOnMention: boolean;
   triggerOnAssign: boolean;
+  // Off gates only the chat; mentions, delegations and schedules still run the agent.
+  chatEnabled: boolean;
   // The member custom fields that start a run when the agent is set into one, each
   // with the seconds its run waits before the agent may pick it up.
   fieldTriggers: AgentFieldTriggerRead[];
@@ -59,6 +67,9 @@ export interface AiAgent {
   runnerScope: 'owner' | 'team';
   // When the agent's runner last polled, or null while none ever has.
   lastSeenAt: string | null;
+  // Where an external agent's tasks and chat messages are sent instead of being taken
+  // by a runner; null when a runner takes them.
+  invocationUrl: string | null;
   createdAt: string;
   apiKeyStart: string | null;
   // The integration key of the model credential (the provider, e.g. "openai"), or
@@ -69,21 +80,33 @@ export interface AiAgent {
   actionCount: number;
   skillCount: number;
   toolCount: number;
+  // Whether the viewer may act on the agent as a whole (edit, delete, rotate its key,
+  // use its invocation secret): the api refuses a member who shares only some of its
+  // projects.
+  canManage: boolean;
 }
 
 // A run waits as 'pending' until a worker or a runner takes it; 'canceled' is a
 // pending run ended by hand.
 export type AgentRunStatus = 'pending' | 'success' | 'failed' | 'canceled';
 
-// One row of an agent's autonomous run history. Issue-triggered runs reference an
-// issue; scheduled and manual runs do not.
+export type AgentRunTrigger =
+  'mention' | 'delegation' | 'field' | 'schedule' | 'manual' | 'status' | 'event';
+
+// One row of an agent's autonomous run history. A run triggered on an issue references
+// it; a cron schedule's run and a manual one do not.
 export interface AgentRun {
   id: number;
   status: AgentRunStatus;
-  trigger: 'mention' | 'delegation' | 'field' | 'schedule' | 'manual';
+  executionState: 'queued' | 'running' | 'success' | 'failed' | 'canceled';
+  trigger: AgentRunTrigger;
   issueId: number | null;
   issueIdentifier: string | null;
   issueTitle: string | null;
+  // A run started by a mention in a document comment. The title is null for a document
+  // that is private now.
+  documentId: number | null;
+  documentTitle: string | null;
   prompt: string;
   attempts: number;
   lastError: string | null;
@@ -123,15 +146,19 @@ export interface NewAiAgentInput {
   instructions?: string | null;
   tools?: string[];
   temperature?: number | null;
+  reasoningEffort?: ReasoningEffort | null;
   maxSteps?: number | null;
+  runTimeoutSec?: number | null;
   memoryEnabled?: boolean;
   memoryLastMessages?: number | null;
   triggerOnMention?: boolean;
   triggerOnAssign?: boolean;
+  chatEnabled?: boolean;
   fieldTriggers?: AgentFieldTrigger[];
   delegationDelaySec?: number;
   projectIds?: number[];
   runnerScope?: 'owner' | 'team';
+  invocationUrl?: string | null;
 }
 
 export interface AiAgentPatch {
@@ -142,15 +169,19 @@ export interface AiAgentPatch {
   instructions?: string | null;
   tools?: string[];
   temperature?: number | null;
+  reasoningEffort?: ReasoningEffort | null;
   maxSteps?: number | null;
+  runTimeoutSec?: number | null;
   memoryEnabled?: boolean;
   memoryLastMessages?: number | null;
   triggerOnMention?: boolean;
   triggerOnAssign?: boolean;
+  chatEnabled?: boolean;
   fieldTriggers?: AgentFieldTrigger[];
   delegationDelaySec?: number;
   projectIds?: number[];
   runnerScope?: 'owner' | 'team';
+  invocationUrl?: string | null;
 }
 
 // One event of a streamed agent run (mirrors the API's AgentRunEvent). `text` is a
@@ -196,10 +227,57 @@ export const regenerateAiAgentKey = (teamId: number, agentId: number) =>
     method: 'POST',
   });
 
+// How the endpoint at the invocation URL answered a test ping. `status` is null when no
+// answer arrived.
+export interface InvocationTestResult {
+  ok: boolean;
+  timedOut: boolean;
+  status: number | null;
+  error: string | null;
+  responseBody: string | null;
+  durationMs: number;
+}
+
+// The key the requests to an external agent's invocation URL are signed with. Null
+// until the agent first gets a URL.
+export const getInvocationSecret = (teamId: number, agentId: number) =>
+  request<{ secret: string | null }>(`/teams/${teamId}/ai-agents/${agentId}/invocation-secret`);
+
+export const rotateInvocationSecret = (teamId: number, agentId: number) =>
+  request<{ secret: string }>(`/teams/${teamId}/ai-agents/${agentId}/invocation-secret`, {
+    method: 'POST',
+  });
+
+export const testInvocation = (teamId: number, agentId: number) =>
+  request<InvocationTestResult>(`/teams/${teamId}/ai-agents/${agentId}/invocation-test`, {
+    method: 'POST',
+  });
+
 export const deleteAiAgent = (teamId: number, agentId: number) =>
   request<void>(`/teams/${teamId}/ai-agents/${agentId}`, { method: 'DELETE' });
 
 export const listAgentRuns = (teamId: number, agentId: number, before?: number) =>
   request<AgentRunPage>(
     `/teams/${teamId}/ai-agents/${agentId}/runs?limit=25${before ? `&before=${before}` : ''}`,
+  );
+
+export interface ExternalRunEvent {
+  type: string;
+  toolCallId?: string;
+  toolCallName?: string;
+  delta?: string;
+  content?: string;
+  message?: string;
+}
+export interface ExternalRunTrace {
+  attempt: number;
+  previousAttempt: number | null;
+  sessionId: string | null;
+  sessionUrl: string | null;
+  truncated: boolean;
+  events: { event: ExternalRunEvent; receivedAt: string }[];
+}
+export const getExternalRunTrace = (runId: number, attempt?: number) =>
+  request<ExternalRunTrace | null>(
+    `/agent-runs/${runId}/trace${attempt == null ? '' : `?attempt=${attempt}`}`,
   );

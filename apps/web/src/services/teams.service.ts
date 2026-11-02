@@ -5,13 +5,19 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
 import {
   type InviteTeamRole,
   listTeamInvites,
+  listInviteCandidates,
   createTeamInvite,
+  renewTeamInvite,
+  sendTeamInviteEmail,
   deleteTeamInvite,
 } from '@/lib/api/endpoints/invites';
 import type { MemberKind, MemberListParams } from '@/lib/api/endpoints/members';
+import { getInviteSearch } from '@/lib/api/endpoints/settings';
 import {
   type TeamProjectListParams,
   type Team,
@@ -30,6 +36,7 @@ import {
   updateTeam,
   setTeamMemberRole,
   removeTeamMember,
+  deleteTeam,
   leaveTeam,
 } from '@/lib/api/endpoints/teams';
 import { nextPageParam } from '@/lib/api/core/paging';
@@ -155,7 +162,7 @@ export function useUpdateTeamProjectDefaults(teamId: number) {
 export function useCreateTeam() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; slug: string }) => createTeam(input),
+    mutationFn: (input: { name: string; slug: string; workspaceId: number }) => createTeam(input),
     onSuccess: (team) => {
       // Put the team in the cached list right away so the switcher shows it before
       // the refetch lands; it has no projects yet, so nothing else has to load.
@@ -216,6 +223,17 @@ export function useRemoveTeamMember(teamId: number) {
   });
 }
 
+export function useDeleteTeam() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (teamId: number) => deleteTeam(teamId),
+    onSuccess: (_result, teamId) => {
+      qc.setQueryData<Team[]>(qk.teams, (prev) => prev?.filter((t) => t.id !== teamId));
+      void qc.invalidateQueries({ queryKey: qk.teams });
+    },
+  });
+}
+
 // Leaving a team takes the caller's projects in it with them, so the project list is
 // refreshed along with the teams.
 export function useLeaveTeam() {
@@ -241,14 +259,59 @@ export function useTeamInvitesQuery(teamId: number, enabled = true) {
   });
 }
 
+export function useInviteSearchQuery() {
+  return useQuery({ queryKey: qk.inviteSearch, queryFn: () => getInviteSearch() });
+}
+
+// The API answers only a search of at least 2 characters.
+export function useInviteCandidatesQuery(teamId: number, search: string) {
+  return useQuery({
+    queryKey: qk.inviteCandidates(teamId, search),
+    queryFn: () => listInviteCandidates(teamId, search),
+    enabled: search.length >= 2,
+    placeholderData: keepPreviousData,
+  });
+}
+
 // The invite dialog shows the reason under its address field, so this mutation opts
 // out of the global error toast.
 export function useCreateTeamInvite(teamId: number) {
+  const t = useTranslations('members.invites');
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { email: string; role: InviteTeamRole }) => createTeamInvite(teamId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.teamInvites(teamId) }),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: qk.teamInvites(teamId) });
+      if (result.emailQueued) toast.success(t('emailQueued'));
+      else if (result.emailFailed) toast.error(t('emailFailed'));
+      else toast.info(t('emailUnavailable'));
+    },
     meta: { suppressErrorToast: true },
+  });
+}
+
+export function useSendTeamInviteEmail(teamId: number) {
+  const t = useTranslations('members.invites');
+  return useMutation({
+    mutationFn: (inviteId: number) => sendTeamInviteEmail(teamId, inviteId),
+    onSuccess: (result) => {
+      if (result.emailQueued) toast.success(t('emailQueued'));
+      else toast.info(t('resendUnavailable'));
+    },
+  });
+}
+
+export function useRenewTeamInvite(teamId: number) {
+  const t = useTranslations('members.invites');
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteId: number) => renewTeamInvite(teamId, inviteId),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: qk.teamInvites(teamId) });
+      if (result.emailQueued) toast.success(t('renewed'));
+      else if (result.emailFailed) toast.error(t('renewedEmailFailed'));
+      else toast.info(t('renewedNoEmail'));
+    },
   });
 }
 

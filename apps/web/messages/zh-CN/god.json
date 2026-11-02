@@ -19,7 +19,8 @@
       "signIn": "登录方式",
       "projects": "项目",
       "lastSeen": "最近登录",
-      "email": "邮箱"
+      "email": "邮箱",
+      "active": "启用"
     },
     "registered": "注册于 {date}",
     "roleGod": "实例管理员",
@@ -30,7 +31,20 @@
     "verified": "已验证",
     "notVerified": "未验证",
     "open": "打开账户",
-    "showAccess": "查看项目权限"
+    "showAccess": "查看项目权限",
+    "activeAria": "账号启用：{email}",
+    "activeState": {
+      "on": "启用",
+      "off": "停用"
+    },
+    "activeLock": {
+      "owner": "实例所有者始终处于启用状态。",
+      "agent": "代理的账号随其代理而定。",
+      "scim": "由你的身份提供方（SCIM）决定哪些账号处于启用状态。"
+    },
+    "deactivateTitle": "停用 {email}？",
+    "deactivateBody": "该用户会立即退出登录，在你重新启用账号之前无法登录，也无法使用其 API 密钥。其 MCP 连接和发出的邀请将被移除。其他内容不会被删除。",
+    "deactivateConfirm": "停用"
   },
   "userPanel": {
     "instanceOwner": "实例管理员",
@@ -57,6 +71,7 @@
     "deleteConfirm": "删除账户",
     "deleteConfirmWithProjects": "{count, plural, other {删除账户和项目}}",
     "deleteMessage": "<strong>{name}</strong> 将无法访问此实例。该用户创建的工作项和评论会保留，但作者将被取消关联。此操作无法撤销。",
+    "deleteWorkspaceNote": "该账户拥有的工作区若没有项目和 AI 代理，会随账户一起删除；否则将转给你，连同该账户在其中单独拥有的一切。",
     "soleOwnerTitle": "{count, plural, other {# 个项目的唯一所有者}}",
     "soleOwnerHint": "{count, plural, other {账户删除后，将无人能够管理这些项目。}}",
     "deleteWithProjects": "{count, plural, other {同时删除这些项目}}",
@@ -155,28 +170,78 @@
     },
     "joined": "加入于 {date}"
   },
+  "roles": {
+    "newRole": "新建角色",
+    "empty": "还没有系统角色。",
+    "default": "默认",
+    "defaultUndeletable": "无法删除默认角色",
+    "columns": {
+      "role": "角色",
+      "permissions": "权限"
+    },
+    "edit": "编辑角色",
+    "delete": "删除角色",
+    "deleteTitle": "删除角色“{name}”",
+    "deleteDescription": "此操作无法撤销。"
+  },
   "general": {
     "saved": "项目默认设置已保存",
     "projectDefaults": "项目默认设置",
     "mcpEnabled": "新项目默认启用 MCP",
-    "mcpEnabledHint": "新项目创建时即纳入所属团队的 MCP 覆盖范围。"
+    "mcpEnabledHint": "新项目创建时即纳入所属团队的 MCP 覆盖范围。",
+    "workspacesSaved": "工作区设置已保存",
+    "workspaces": "工作区",
+    "personalWorkspaces": "每人一个工作区",
+    "personalWorkspacesHint": "每个账户都会获得一个以其姓名命名的专属工作区。关闭后，成员只能在被添加到的工作区中工作。",
+    "invites": "邀请",
+    "inviteSearch": "邀请时推荐成员",
+    "inviteSearchHint": "团队所有者或管理员在邀请对话框中输入地址时，会按姓名和邮箱列出本实例所有工作区中匹配的账户。关闭后，需要输入完整地址。",
+    "invitesSaved": "邀请设置已保存",
+    "agents": "代理",
+    "agentsSaved": "代理设置已保存",
+    "embedding": "嵌入",
+    "embedSites": "受信任的网站",
+    "embedSitesHint": "公开共享的工作项和看板只能在这些网站的框架中打开。用逗号分隔网站。",
+    "embedSitesInvalid": "按 https://example.com 的格式输入每个网站，不带路径。",
+    "embedSaved": "受信任的网站已保存",
+    "traceRetention": "保留运行追踪",
+    "traceRetentionHint": "代理的每次运行都会记录模型和工具调用。用量面板只统计仍保留的运行。",
+    "traceDays": "{days} 天",
+    "traceForever": "永久",
+    "maxRunTime": "最长运行时间",
+    "maxRunTimeHint": "单次智能体运行在被停止并记为失败之前可持续的时间。智能体自身的上限不能超过此值。",
+    "runMinutes": "{minutes, plural, other {# 分钟}}",
+    "runSeconds": "{seconds} 秒",
+    "concurrentRuns": "同时运行数",
+    "concurrentRunsHint": "此实例上可同时进行的代理运行数。其余的在队列中等待。聊天和外部代理不计入。0 表示不限。",
+    "concurrentRunsInvalid": "请输入 0 到 {max} 之间的整数。"
   },
   "authentication": {
     "saved": "身份验证设置已保存",
     "registration": "注册",
     "registrationHint": "设置哪些人可以创建此实例的账户。",
+    "registrationPasswordlessNote": "注册和密码找回由登录提供方负责。",
+    "inviteTtlDays": "邀请有效期（天）",
+    "inviteTtlDaysHint": "超过此期限后，邀请链接将失效；在仅限邀请注册时，也无法再用它注册。设为 0 则邀请永不过期。",
+    "inviteTtlDaysInvalid": "请输入 0 到 {max} 之间的整数天数。",
+    "allowedEmailDomains": "允许的邮箱域名",
+    "allowedEmailDomainsHint": "只有这些域名下的地址可以创建账户。用逗号分隔；留空则允许任何地址。已有账户不受影响。",
+    "allowedEmailDomainsInvalid": "每个域名应类似 example.com，最多 100 个。",
     "modes": {
       "open": {
         "label": "开放注册",
-        "description": "任何访问注册页面的人都可以创建账户。"
+        "description": "任何访问注册页面的人都可以创建账户。",
+        "descriptionPasswordless": "任何人首次通过提供方登录即可获得账户。"
       },
       "invite": {
         "label": "仅限邀请",
-        "description": "只有收到项目邀请的邮箱可以创建账户。"
+        "description": "只有收到项目邀请的邮箱可以创建账户。",
+        "descriptionPasswordless": "仅当该地址存在待处理的邀请时，通过提供方登录才会创建账户。"
       },
       "closed": {
         "label": "关闭注册",
-        "description": "不允许创建新账户，现有账户仍可登录。"
+        "description": "不允许创建新账户，现有账户仍可登录。",
+        "descriptionPasswordless": "不创建新账户，即使通过提供方登录也不例外。现有账户可继续登录。"
       }
     },
     "signIn": "登录选项",
@@ -246,7 +311,18 @@
     "testing": "正在发送…",
     "testHint": "使用当前设置发送真实邮件，无需先保存。",
     "testConfigureFirst": "请先启用服务商并填写所需凭据。",
-    "testSent": "测试邮件已发送至 {email}"
+    "testSent": "测试邮件已发送至 {email}",
+    "smtpAuth": "身份验证",
+    "smtpAuthOptions": {
+      "password": "密码",
+      "microsoft365": "Microsoft 365（OAuth）"
+    },
+    "mailbox": "邮箱",
+    "tenantId": "租户 ID",
+    "clientId": "客户端 ID",
+    "clientSecret": "客户端密钥",
+    "clientSecretPlaceholder": "应用注册的密钥",
+    "microsoft365Hint": "以 Entra ID 应用注册的身份登录，而不是使用邮箱密码，因此邮箱可以保持开启 MFA。该应用需要 Office 365 Exchange Online 的应用程序权限 SMTP.SendAsApp 并经过管理员同意，在 Exchange 中拥有此邮箱的访问权限，并为该邮箱开启 SMTP AUTH。"
   },
   "authProvider": {
     "saved": "身份验证提供商已保存",
@@ -269,49 +345,5 @@
     "scopes": "权限范围",
     "scopesHint": "以空格分隔。openid 为必需；profile 和 email 用于填充姓名和邮箱。",
     "oidcRedirectUriHint": "将此地址注册为身份提供方客户端的重定向 URI。不完全一致时提供方会拒绝登录。"
-  },
-  "scim": {
-    "saved": "SCIM 设置已保存",
-    "provisioning": "账号预配",
-    "provisioningConfigured": "身份提供方会在此实例上创建、更新和停用账号。",
-    "provisioningMissing": "请先生成令牌。",
-    "token": "令牌",
-    "noToken": "尚未生成令牌",
-    "tokenHint": "身份提供方发送的持有者令牌。仅显示一次；生成新令牌会使旧令牌失效。",
-    "generateToken": "生成令牌",
-    "replaceToken": "更换令牌",
-    "baseUrl": "SCIM 地址",
-    "baseUrlHint": "在身份提供方中填入此地址。",
-    "copyBaseUrl": "复制 SCIM 地址",
-    "groups": "群组",
-    "groupsHint": "身份提供方推送的群组。列表由其维护；每个群组授予什么在这里设置。",
-    "groupsEmpty": "尚未推送任何群组。",
-    "memberCount": "{count, plural, =0 {没有成员} other {# 位成员}}",
-    "grantsNothing": "尚未授予任何权限",
-    "editMappings": "编辑权限",
-    "roleOwner": "所有者",
-    "roleMember": "成员",
-    "tokenDialog": {
-      "title": "生成 SCIM 令牌",
-      "description": "令牌仅显示一次，之后无法查看。正在使用的令牌将立即失效。",
-      "submit": "生成",
-      "submitPending": "正在生成…",
-      "createdTitle": "你的 SCIM 令牌",
-      "createdDescription": "现在把它复制到身份提供方。之后无法再次显示。",
-      "copy": "复制令牌"
-    },
-    "mappings": {
-      "title": "{group} 授予的权限",
-      "description": "该群组的成员会加入这里列出的项目。移除项目会收回此群组授予的成员资格。",
-      "empty": "该群组尚未授予任何权限。",
-      "addProject": "添加项目…",
-      "role": "角色",
-      "roleOwner": "所有者",
-      "roleMember": "成员",
-      "projectRole": "项目角色",
-      "defaultRole": "默认角色",
-      "remove": "移除项目",
-      "saved": "群组权限已保存"
-    }
   }
 }

@@ -90,7 +90,7 @@
     "messages": "Mensajes de la conversación",
     "usingTool": "Usando {tool}…",
     "usedTool": "Ha usado {tool}",
-    "usedTools": "Ha usado {count, plural, one {# herramientra} other {# herramientas}}",
+    "usedTools": "Ha usado {count, plural, one {# herramienta} other {# herramientas}}",
     "toolInput": "Entrada",
     "toolOutput": "Salida",
     "thinking": "Pensando…",
@@ -101,6 +101,8 @@
     "unreachable": "No se ha podido contactar al agente. Inténtalo otra vez.",
     "runnerOffline": "Ejecutor fuera de línea",
     "runnerOfflineHint": "Arranca el ejecutor en tu máquina para chatear con este agente.",
+    "chatDisabled": "Este agente no está disponible en el chat",
+    "chatDisabledHint": "El chat de este agente está apagado. Las menciones, delegaciones y tareas programadas lo siguen ejecutando.",
     "attachFile": "Adjunta una hoja de cálculo, un documento, un PDF o un fichero de texto para que el agente lo lea",
     "removeAttachment": "Quitar adjunto",
     "uploadFailed": "No se ha podido subir el fichero.",
@@ -116,7 +118,7 @@
     "importSkipHint": "Las filas marcadas con ✕ se saltan al confirmar.",
     "importAdjustHint": "Pide al agente que ajuste la correspondencia si algo parece mal.",
     "importCanceled": "Esta importación se ha cancelado. No se ha creado nada.",
-    "importFailed": "La importación ha fallao.",
+    "importFailed": "La importación ha fallado.",
     "importConfirmed": "Se {count, plural, one {ha creado # ticket} other {han creado # tickets}}",
     "importSkippedRow": "Fila saltada {row}: {reason}",
     "contextSize": "Contexto de la conversación: {count, plural, one {# token} other {# tokens}}",
@@ -126,7 +128,7 @@
     "createFailed": "No se ha podido crear el enlace. Inténtalo otra vez.",
     "changeFailed": "No se ha podido cambiar lo que muestra el enlace. Inténtalo otra vez.",
     "stopFailed": "No se ha podido dejar de compartir. Inténtalo otra vez.",
-    "copyFailed": "No se ha podido copiar el enlace. Seléccionalo y cópialo a mano.",
+    "copyFailed": "No se ha podido copiar el enlace. Selecciónalo y cópialo a mano.",
     "hint": "Cualquier persona con el enlace lo puede leer. No hace falta cuenta.",
     "shareLink": "Compartir enlace",
     "fullDetails": "Detalles completos del ticket",
@@ -134,7 +136,9 @@
     "stopSharing": "Dejar de compartir",
     "createLink": "Crear enlace",
     "copy": "Copiar",
-    "copied": "Copiado"
+    "copied": "Copiado",
+    "calendarFeed": "Feed de calendario",
+    "calendarFeedHint": "Copia este enlace en tu aplicación de calendario para suscribirte a esta vista."
   },
   "actions": "Acciones",
   "clearSearch": "Limpiar la búsqueda",
@@ -198,7 +202,8 @@
     "copiedLink": "Copiado",
     "editLink": "Editar enlace",
     "retryPreview": "Intentar de nuevo",
-    "copyLinkFailed": "No se ha podido copiar el enlace. Selecciona y copia la URL de arriba."
+    "copyLinkFailed": "No se ha podido copiar el enlace. Selecciona y copia la URL de arriba.",
+    "todoList": "Lista de tareas"
   },
   "chart": {
     "download": "Guardar gráfico",
@@ -211,5 +216,7 @@
     "page": "Página {number}",
     "perPage": "por página",
     "range": "{first}-{last} de {total}"
-  }
+  },
+  "aboutCloudAndPro": "Más sobre Cloud y Pro",
+  "signingOut": "Cerrando sesión…"
 }

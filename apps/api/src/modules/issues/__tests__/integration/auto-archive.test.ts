@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { db, issue } from '@repo/db';
 import { eq, sql } from 'drizzle-orm';
-import { authedApi } from '#tests/helpers/app';
+import { authedApi, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { sweepStaleIssues } from '../../auto-archive';
@@ -13,7 +13,7 @@ import { sweepStaleIssues } from '../../auto-archive';
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const api = authedApi(owner.cookie);
-  await api.projects.post({ key: 'MKT', name: 'Marketing' });
+  await createProject(api, { key: 'MKT', name: 'Marketing' });
   const columns = (await api.projects({ projectKey: 'MKT' }).get()).data!.columns;
   const done = columns.find((c) => c.stateType === 'completed')!;
   const todo = columns.find((c) => c.stateType === 'unstarted')!;
@@ -83,6 +83,18 @@ describe('auto-archive sweep', () => {
 
     expect((await api.issues({ issueId: recent }).get()).data!.archivedAt).toBeNull();
     expect((await api.issues({ issueId: open }).get()).data!.archivedAt).toBeNull();
+  });
+
+  it('leaves the issues of an archived project', async () => {
+    const { api, doneId } = await setup();
+    const issueId = await addIssue(api, doneId, 'Shipped');
+    await backdate(issueId, 20);
+    const project = (await api.projects({ projectKey: 'MKT' }).get()).data!.project;
+    await api.teams({ teamId: project.teamId }).projects({ projectId: project.id }).archive.post();
+
+    expect(await sweepStaleIssues()).toBe(0);
+
+    expect((await api.issues({ issueId }).get()).data!.archivedAt).toBeNull();
   });
 
   it('does nothing on a second pass over the issues it already archived', async () => {

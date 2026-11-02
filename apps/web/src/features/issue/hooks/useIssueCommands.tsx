@@ -40,6 +40,7 @@ import { StateIcon } from '../components/shared/IssueIcons';
 import { dueDatePresets } from '../utils/dueDatePresets';
 import { useDueDatePresetLabel } from './useDueDatePresetLabel';
 import { buildIssuePrompt } from '../utils/issuePrompt';
+import { writeClipboardText } from '../utils/clipboard';
 import { delegatableAgents } from '../utils/delegates';
 
 // The palette commands for the issue the user is looking at — the issue page or
@@ -104,7 +105,7 @@ export function useIssueCommands(
   const currentColumn = project.columns.find((c) => c.id === issue.columnId);
 
   const copyPrompt = async () => {
-    await navigator.clipboard.writeText(buildIssuePrompt(issue, project, session?.user));
+    await writeClipboardText(buildIssuePrompt(issue, project, session?.user));
     toast.success(t('promptCopied'));
   };
 
@@ -247,7 +248,12 @@ export function useIssueCommands(
             id: `issue.due-date.${p.key}`,
             label: presetLabel(p.key),
             icon: <CalendarClock />,
-            shortcut: format.dateTime(p.date, { weekday: 'short', month: 'short', day: 'numeric' }),
+            shortcut: format.dateTime(p.date, {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              calendar: 'gregory',
+            }),
             run: () => patch({ dueDate: toDateStr(p.date) }),
           })),
           ...(issue.dueDate

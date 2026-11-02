@@ -1,7 +1,9 @@
-import { db, projectMember, teamRole, revision } from '@repo/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { db, project, projectMember, teamRole, revision } from '@repo/db';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { toMemberContext, type MemberRole } from '#modules/members/service';
+import { reachedProjectIds } from '#shared/access';
 import { hasPermission, type PermissionResource } from '#shared/permissions';
+import { projectAccess, type WorkspaceGrant } from '#shared/workspace-roles';
 
 // The revision engine's read side. The counters themselves are written by the
 // triggers in migration 0070 — no application code bumps them, so a write moves
@@ -37,24 +39,38 @@ export interface ScopeRead {
   resource: PermissionResource | null;
 }
 
-// The markers a client is watching, in one query. The join against the membership
-// is the access check: a scope of a project the user is not a member of returns no
-// row and reads as unchanged. The role decides the rest — a scope whose resource
-// the member may not read is dropped the same way, so it also reads as unchanged.
+function memberOrGranted(grantedTeams: number[]) {
+  return or(
+    isNotNull(projectMember.userId),
+    grantedTeams.length > 0 ? inArray(project.teamId, grantedTeams) : undefined,
+  );
+}
+
+// The markers a client is watching, in one query. A scope of a project the user neither
+// belongs to nor reaches through their workspace role returns no row and reads as
+// unchanged. A scope whose resource their access may not read is dropped the same way,
+// so it also reads as unchanged.
 export async function readRevs(
   wanted: ScopeRead[],
   userId: string,
+  grants: Map<number, WorkspaceGrant>,
 ): Promise<Record<string, string>> {
   if (wanted.length === 0) return {};
+  const grantedTeams = [...grants.keys()];
   const rows = await db
     .select({
       scope: revision.scope,
       rev: revision.rev,
+      teamId: project.teamId,
       role: projectMember.role,
       permissions: teamRole.permissions,
     })
     .from(revision)
-    .innerJoin(projectMember, eq(projectMember.projectId, revision.projectId))
+    .innerJoin(project, eq(project.id, revision.projectId))
+    .leftJoin(
+      projectMember,
+      and(eq(projectMember.projectId, revision.projectId), eq(projectMember.userId, userId)),
+    )
     .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
     .where(
       and(
@@ -62,7 +78,7 @@ export async function readRevs(
           revision.scope,
           wanted.map((w) => w.key),
         ),
-        eq(projectMember.userId, userId),
+        memberOrGranted(grantedTeams),
       ),
     );
 
@@ -71,10 +87,28 @@ export async function readRevs(
   for (const row of rows) {
     const resource = resources.get(row.scope);
     if (resource) {
-      const { permissions } = toMemberContext(row.role as MemberRole, row.permissions);
-      if (!hasPermission(permissions, resource, 'read')) continue;
+      const member = row.role ? toMemberContext(row.role as MemberRole, row.permissions) : null;
+      const access = projectAccess(member, grants.get(row.teamId) ?? null);
+      if (!access || !hasPermission(access.permissions, resource, 'read')) continue;
     }
     out[row.scope] = String(row.rev);
   }
   return out;
+}
+
+// One marker for the session user's inbox in every project they can read, so the app
+// badge watches a single scope however many projects there are. It lists each
+// project's marker, so it moves when any inbox moves and when a project is gained or lost.
+export async function inboxAllRevision(
+  userId: string,
+  grants: Map<number, WorkspaceGrant>,
+): Promise<string> {
+  const rows = await db
+    .select({ projectId: project.id, rev: revision.rev })
+    .from(project)
+    .innerJoin(revision, eq(revision.scope, sql`'inbox:' || ${project.id} || ':' || ${userId}`))
+    .where(inArray(project.id, reachedProjectIds(userId, [...grants.keys()])))
+    .orderBy(project.id);
+  if (rows.length === 0) return NO_REV;
+  return rows.map((row) => `${row.projectId}=${row.rev}`).join(',');
 }

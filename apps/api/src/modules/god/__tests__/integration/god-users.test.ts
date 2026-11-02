@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { auth } from '@repo/auth';
+import { db, team } from '@repo/db';
 import { resetDb } from '#tests/helpers/db';
-import { addUser, createAgentUser, joinProject, setup } from '../helpers';
+import { apiKeyApi, authedApi, ownWorkspaceId, createProject } from '#tests/helpers/app';
+import { signUpTestUser } from '#tests/helpers/auth';
+import { addUser, createAgentUser, joinProject, setup, type Actor } from '../helpers';
 
 // The instance user directory under god mode: listing every account on the instance,
 // reading one with the projects it can reach, confirming an email address on the
@@ -9,6 +14,21 @@ import { addUser, createAgentUser, joinProject, setup } from '../helpers';
 // whole plugin sits behind the god guard.
 
 const ALL = { kind: 'all' as const, page: 1, pageSize: 50 };
+
+async function lastSeenOf(god: Actor, userId: string) {
+  const res = await god.api.god.users.get({ query: ALL });
+  return res.data?.items.find((u) => u.id === userId)?.lastSeenAt;
+}
+
+// Moves the person's team into the owner's workspace, so what they own there is outside
+// the workspaces they own.
+async function moveTeamTo(owner: Actor, person: Actor): Promise<void> {
+  const [own] = (await person.api.teams.get()).data!;
+  await db
+    .update(team)
+    .set({ workspaceId: await ownWorkspaceId(owner.api) })
+    .where(eq(team.id, own!.id));
+}
 
 async function withoutDeadlock<T>(operation: Promise<T>): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -45,7 +65,7 @@ describe('god users', () => {
   describe('list — GET /god/users', () => {
     it('reports the sign-in state and project count of each account', async () => {
       const { god } = await setup();
-      await god.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(god.api, { key: 'MKT', name: 'Marketing' });
 
       const res = await god.api.god.users.get({ query: ALL });
 
@@ -65,9 +85,53 @@ describe('god users', () => {
       expect(res.data?.items[0].lastSeenAt).not.toBeNull();
     });
 
+    it('keeps when a person was last seen after they sign out', async () => {
+      const { god } = await setup();
+      const person = await signUpTestUser({ name: 'Ann', email: 'ann@example.com' });
+      const api = authedApi(person.cookie);
+      expect((await api.teams.get()).status).toBe(200);
+
+      const signOut = await auth.handler(
+        new Request(new URL(process.env.API_URL!).origin + '/api/auth/sign-out', {
+          method: 'POST',
+          headers: { cookie: person.cookie, origin: new URL(process.env.APP_URL!).origin },
+        }),
+      );
+      expect(signOut.status).toBe(200);
+      expect((await api.teams.get()).status).toBe(401);
+
+      expect(await lastSeenOf(god, person.userId)).not.toBeNull();
+    });
+
+    it('notes a request made with an API key and leaves updatedAt alone', async () => {
+      const { god } = await setup();
+      const person = await signUpTestUser();
+      const { key } = await auth.api.createApiKey({ body: { userId: person.userId, name: 'ci' } });
+      const api = apiKeyApi(key);
+      const before = (await api.me.get()).data;
+      expect(before).toMatchObject({ authenticated: true });
+      expect(await lastSeenOf(god, person.userId)).toBeNull();
+
+      expect((await api.teams.get()).status).toBe(200);
+
+      expect(await lastSeenOf(god, person.userId)).not.toBeNull();
+      expect((await api.me.get()).data).toEqual(before);
+    });
+
+    it('writes it once an hour, not on every request', async () => {
+      const { god } = await setup();
+      const person = await signUpTestUser();
+      const api = authedApi(person.cookie);
+      expect((await api.teams.get()).status).toBe(200);
+      const first = await lastSeenOf(god, person.userId);
+
+      expect((await api.teams.get()).status).toBe(200);
+      expect(await lastSeenOf(god, person.userId)).toEqual(first);
+    });
+
     it('lists people by default and agent bot users only when asked', async () => {
       const { god } = await setup();
-      await god.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(god.api, { key: 'MKT', name: 'Marketing' });
       const agentUserId = await createAgentUser(god, 'MKT');
 
       const humans = await god.api.god.users.get({
@@ -90,7 +154,7 @@ describe('god users', () => {
 
     it('defaults to people when no kind is given', async () => {
       const { god } = await setup();
-      await god.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(god.api, { key: 'MKT', name: 'Marketing' });
       await createAgentUser(god, 'MKT');
 
       const res = await god.api.god.users.get({ query: {} });
@@ -146,7 +210,7 @@ describe('god users', () => {
     it('resolves an owner membership to full permissions', async () => {
       const { god } = await setup();
       const alice = await addUser({ name: 'Alice', email: 'alice@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
 
       const res = await god.api.god.users({ userId: alice.id }).get();
 
@@ -170,7 +234,7 @@ describe('god users', () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, bob, 'MKT', 'member');
 
       const res = await god.api.god.users({ userId: bob.id }).get();
@@ -191,7 +255,7 @@ describe('god users', () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, bob, 'MKT', 'owner');
 
       const res = await god.api.god.users({ userId: alice.id }).get();
@@ -261,7 +325,7 @@ describe('god users', () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, bob, 'MKT', 'owner');
 
       const res = await god.api.god.users({ userId: alice.id }).delete();
@@ -276,7 +340,7 @@ describe('god users', () => {
     it('removes private documents while public documents remain recoverable', async () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, god, 'MKT', 'owner');
       const pages = alice.api.projects({ projectKey: 'MKT' }).documents;
       const shared = (await pages.post({ title: 'Shared handbook' })).data!;
@@ -310,7 +374,7 @@ describe('god users', () => {
     it('serializes a document upload with deletion of its uploader account', async () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, god, 'MKT', 'owner');
       const pages = alice.api.projects({ projectKey: 'MKT' }).documents;
       const privatePage = (await pages.post({ title: 'Private upload target', isPrivate: true }))
@@ -339,7 +403,7 @@ describe('god users', () => {
     it('does not leave an ownerless private page during access change and account deletion', async () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, god, 'MKT', 'owner');
       const pages = alice.api.projects({ projectKey: 'MKT' }).documents;
       const page = (await pages.post({ title: 'Public draft' })).data!;
@@ -370,7 +434,7 @@ describe('god users', () => {
     it('does not expose or orphan a private revision during account deletion', async () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, god, 'MKT', 'owner');
       const pages = alice.api.projects({ projectKey: 'MKT' }).documents;
       const privatePage = (
@@ -421,7 +485,7 @@ describe('god users', () => {
 
     it("refuses to delete an agent's bot user", async () => {
       const { god } = await setup();
-      await god.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(god.api, { key: 'MKT', name: 'Marketing' });
       const agentUserId = await createAgentUser(god, 'MKT');
 
       const res = await god.api.god.users({ userId: agentUserId }).delete();
@@ -434,8 +498,9 @@ describe('god users', () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, bob, 'MKT', 'member');
+      await moveTeamTo(god, alice);
 
       const res = await god.api.god.users({ userId: alice.id }).delete();
 
@@ -447,12 +512,32 @@ describe('god users', () => {
       expect((await god.api.god.users({ userId: bob.id }).get()).data?.projects).toHaveLength(1);
     });
 
+    it('hands a project in their own workspace to the instance owner without asking', async () => {
+      const { god } = await setup();
+      const alice = await addUser({ email: 'alice@example.com' });
+      const [own] = (await alice.api.workspaces.get()).data!;
+      const team = await alice.api.teams.post({ name: 'Solo', slug: 'solo', workspaceId: own!.id });
+      await alice.api.teams({ teamId: team.data!.id }).projects.post({ key: 'SOL', name: 'Solo' });
+
+      const detail = await god.api.god.users({ userId: alice.id }).get();
+      expect(detail.data?.projects[0]).toMatchObject({ ownerCount: 1, inOwnWorkspace: true });
+
+      const res = await god.api.god.users({ userId: alice.id }).delete();
+
+      expect(res.status).toBe(204);
+      const kept = await god.api.god.users({ userId: god.id }).get();
+      expect(kept.data?.projects).toEqual([
+        expect.objectContaining({ projectKey: 'SOL', role: 'owner' }),
+      ]);
+    });
+
     it('deletes the sole-owned projects with the account when asked', async () => {
       const { god } = await setup();
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
-      await alice.api.projects.post({ key: 'MKT', name: 'Marketing' });
+      await createProject(alice.api, { key: 'MKT', name: 'Marketing' });
       await joinProject(alice, bob, 'MKT', 'member');
+      await moveTeamTo(god, alice);
 
       const res = await god.api.god
         .users({ userId: alice.id })
@@ -471,7 +556,7 @@ describe('god users', () => {
       const alice = await addUser({ email: 'alice@example.com' });
       const bob = await addUser({ email: 'bob@example.com' });
       // Bob owns OPS; Alice is only a member there, so it is not hers to take down.
-      await bob.api.projects.post({ key: 'OPS', name: 'Operations' });
+      await createProject(bob.api, { key: 'OPS', name: 'Operations' });
       await joinProject(bob, alice, 'OPS', 'member');
 
       const res = await god.api.god

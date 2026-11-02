@@ -23,6 +23,7 @@ export default function DocumentEditorHeader({
   projectName,
   document,
   ancestors,
+  documents,
   title,
   content,
   richHtml,
@@ -39,7 +40,7 @@ export default function DocumentEditorHeader({
   onRetrySave,
   onFullWidthChange,
   onStickyToolbarChange,
-  onCreateChild,
+  onCreate,
   onDuplicate,
   onFavoriteChange,
   onLockChange,
@@ -57,6 +58,7 @@ export default function DocumentEditorHeader({
   projectName: string;
   document: ProjectDocument;
   ancestors: ProjectDocumentSummary[];
+  documents: ProjectDocumentSummary[];
   title: string;
   content: () => string;
   richHtml: () => string;
@@ -69,11 +71,11 @@ export default function DocumentEditorHeader({
   canManageLifecycle: boolean;
   canDelete: boolean;
   busy: boolean;
-  onBack: () => void;
+  onBack?: () => void;
   onRetrySave: () => void;
   onFullWidthChange: (value: boolean) => void;
   onStickyToolbarChange: (value: boolean) => void;
-  onCreateChild: () => void;
+  onCreate: (parentId: number | null, isPrivate: boolean) => void;
   onDuplicate: () => void;
   onFavoriteChange: (favorite: boolean) => void;
   onLockChange: (locked: boolean) => void;
@@ -112,22 +114,27 @@ export default function DocumentEditorHeader({
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background/90 px-2.5 backdrop-blur-md md:px-4">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="shrink-0 md:hidden"
-        aria-label={t('backToDocuments')}
-        onClick={onBack}
-      >
-        <ArrowLeft className="rtl:rotate-180" />
-      </Button>
+      {onBack && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 md:hidden"
+          aria-label={t('backToDocuments')}
+          onClick={onBack}
+        >
+          <ArrowLeft className="rtl:rotate-180" />
+        </Button>
+      )}
 
       <DocumentBreadcrumbs
         projectKey={projectKey}
         projectName={projectName}
         ancestors={ancestors}
         document={document}
+        documents={documents}
+        canCreate={canCreate}
+        onCreate={onCreate}
       />
 
       <div className="ms-auto flex shrink-0 items-center gap-0.5">
@@ -210,7 +217,7 @@ export default function DocumentEditorHeader({
           onFullWidthChange={onFullWidthChange}
           onStickyToolbarChange={onStickyToolbarChange}
           onPrivacyChange={onPrivacyChange}
-          onCreateChild={onCreateChild}
+          onCreateChild={() => onCreate(document.id, document.isPrivate)}
           onDuplicate={onDuplicate}
           onArchive={onArchive}
           onRestore={onRestore}

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { db, importJob } from '@repo/db';
 import { eq } from 'drizzle-orm';
-import { authedApi } from '#tests/helpers/app';
+import { decryptSecret } from '@repo/crypto';
+import { authedApi, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { createRole } from '#tests/helpers/roles';
@@ -11,7 +12,7 @@ type Client = ReturnType<typeof authedApi>;
 async function setupOwnerProject(): Promise<{ api: Client; userId: string }> {
   const owner = await signUpTestUser();
   const api = authedApi(owner.cookie);
-  await api.projects.post({ key: 'MKT', name: 'Marketing' });
+  await createProject(api, { key: 'MKT', name: 'Marketing' });
   return { api, userId: owner.userId };
 }
 
@@ -56,6 +57,8 @@ const zeroedCounts = {
   state: zeroCounts,
   cycle: zeroCounts,
   attachment: zeroCounts,
+  checklist: zeroCounts,
+  custom_field: zeroCounts,
 };
 
 describe('import jobs', () => {
@@ -322,6 +325,227 @@ describe('import jobs', () => {
         planeProjectId: validBody.planeProjectId,
       });
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('linear', () => {
+    const linearBody = {
+      source: 'linear' as const,
+      apiToken: 'lin_api_test_key',
+      teamId: 'team-ato',
+      teamKey: 'ATO',
+      projectFilter: 'project' as const,
+      projectId: 'proj-tool',
+    };
+
+    it('creates a pending Linear job and stores the credential and config the worker reads', async () => {
+      const { api } = await setupOwnerProject();
+
+      const res = await jobs(api).post({
+        ...linearBody,
+        stateOverrides: { 'state-triage': 'unstarted' },
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.data).toMatchObject({
+        source: 'linear',
+        phase: 'discover',
+        status: 'pending',
+        counts: zeroedCounts,
+      });
+      expect(res.data).not.toHaveProperty('apiToken');
+      const [row] = await db.select().from(importJob).where(eq(importJob.id, res.data!.id));
+      expect(row!.config).toEqual({
+        teamId: 'team-ato',
+        teamKey: 'ATO',
+        projectFilter: 'project',
+        projectId: 'proj-tool',
+        unmatchedUserPolicy: 'unassigned',
+        stateOverrides: { 'state-triage': 'unstarted' },
+      });
+      const credential = decryptSecret({
+        ciphertext: row!.credentialCiphertext!,
+        iv: row!.credentialIv!,
+        authTag: row!.credentialAuthTag!,
+      });
+      expect(JSON.parse(credential)).toEqual({ apiKey: 'lin_api_test_key' });
+    });
+
+    it("creates a job for the team's issues with no project, listed next to Plane jobs", async () => {
+      const { api } = await setupOwnerProject();
+      const plane = (await jobs(api).post(validBody)).data!;
+
+      const { projectId: _projectId, ...team } = linearBody;
+      const res = await jobs(api).post({ ...team, projectFilter: 'none' as const });
+
+      expect(res.status).toBe(201);
+      const [row] = await db.select().from(importJob).where(eq(importJob.id, res.data!.id));
+      expect(row!.config).toMatchObject({ projectFilter: 'none', projectId: null });
+      const list = await jobs(api).get();
+      expect(list.data?.map((j) => [j.id, j.source])).toEqual([
+        [res.data!.id, 'linear'],
+        [plane.id, 'plane'],
+      ]);
+    });
+
+    it.each([
+      ['a missing teamKey', { teamKey: undefined }],
+      ['an empty apiToken', { apiToken: '' }],
+      ['a blank apiToken', { apiToken: '   ' }],
+      ['an unknown projectFilter', { projectFilter: 'some' }],
+      ['a project import with no projectId', { projectId: undefined }],
+      ['a no-project import with a projectId', { projectFilter: 'none' }],
+    ])('rejects %s', async (_case, change) => {
+      const { api } = await setupOwnerProject();
+      const res = await jobs(api).post({ ...linearBody, ...change } as never);
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a Plane body sent as a Linear job', async () => {
+      const { api } = await setupOwnerProject();
+      const res = await jobs(api).post({ ...validBody, source: 'linear' } as never);
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a missing or blank field on the Linear endpoints before calling Linear', async () => {
+      const { api } = await setupOwnerProject();
+      expect((await jobs(api)['linear-test-connection'].post({} as never)).status).toBe(400);
+      expect((await jobs(api)['linear-test-connection'].post({ apiToken: '   ' })).status).toBe(
+        400,
+      );
+      expect(
+        (await jobs(api)['linear-preview'].post({ apiToken: 'lin_api_test_key' } as never)).status,
+      ).toBe(400);
+      expect(
+        (await jobs(api)['linear-preview'].post({ apiToken: 'lin_api_test_key', teamId: ' ' }))
+          .status,
+      ).toBe(400);
+    });
+
+    it('denies a member whose role lacks the import_export permission', async () => {
+      const { api } = await setupOwnerProject();
+      const member = await addMember(api);
+      expect(
+        (await jobs(member)['linear-test-connection'].post({ apiToken: 'lin_api_test_key' }))
+          .status,
+      ).toBe(403);
+      expect(
+        (
+          await jobs(member)['linear-preview'].post({
+            apiToken: 'lin_api_test_key',
+            teamId: 'team-ato',
+          })
+        ).status,
+      ).toBe(403);
+      expect((await jobs(member).post(linearBody)).status).toBe(403);
+    });
+  });
+
+  describe('trello', () => {
+    const trelloBody = {
+      source: 'trello' as const,
+      apiKey: 'trellokey1',
+      apiToken: 'ATTAtoken1',
+      boardId: 'board1',
+      archivedCards: 'archive' as const,
+    };
+
+    it('creates a pending Trello job and stores the matched members by email', async () => {
+      const owner = await signUpTestUser();
+      const api = authedApi(owner.cookie);
+      await createProject(api, { key: 'MKT', name: 'Marketing' });
+
+      const res = await jobs(api).post({
+        ...trelloBody,
+        memberMap: { member1: owner.userId, member2: '' },
+        stateOverrides: { list1: 'started' },
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.data).toMatchObject({
+        source: 'trello',
+        phase: 'discover',
+        status: 'pending',
+        counts: zeroedCounts,
+      });
+      const [row] = await db.select().from(importJob).where(eq(importJob.id, res.data!.id));
+      expect(row!.config).toEqual({
+        boardId: 'board1',
+        archivedCards: 'archive',
+        memberEmails: { member1: owner.email },
+        unmatchedUserPolicy: 'unassigned',
+        stateOverrides: { list1: 'started' },
+      });
+      const credential = decryptSecret({
+        ciphertext: row!.credentialCiphertext!,
+        iv: row!.credentialIv!,
+        authTag: row!.credentialAuthTag!,
+      });
+      expect(JSON.parse(credential)).toEqual({ apiKey: 'trellokey1', token: 'ATTAtoken1' });
+    });
+
+    it('stores no members when none are matched', async () => {
+      const { api } = await setupOwnerProject();
+      const res = await jobs(api).post({ ...trelloBody, archivedCards: 'skip' as const });
+      expect(res.status).toBe(201);
+      const [row] = await db.select().from(importJob).where(eq(importJob.id, res.data!.id));
+      expect(row!.config).toEqual({
+        boardId: 'board1',
+        archivedCards: 'skip',
+        unmatchedUserPolicy: 'unassigned',
+      });
+    });
+
+    it('refuses to match a Trello member with someone outside the project', async () => {
+      const { api } = await setupOwnerProject();
+      const outsider = await signUpTestUser();
+      const res = await jobs(api).post({ ...trelloBody, memberMap: { member1: outsider.userId } });
+      expect(res.status).toBe(400);
+    });
+
+    it.each([
+      ['a missing archivedCards', { archivedCards: undefined }],
+      ['an unknown archivedCards', { archivedCards: 'keep' }],
+      ['a blank boardId', { boardId: '  ' }],
+      ['a key that would break the header', { apiKey: 'key", oauth_token="x' }],
+      ['a blank token', { apiToken: ' ' }],
+    ])('rejects %s', async (_case, change) => {
+      const { api } = await setupOwnerProject();
+      const res = await jobs(api).post({ ...trelloBody, ...change } as never);
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a missing or malformed field on the Trello endpoints before calling Trello', async () => {
+      const { api } = await setupOwnerProject();
+      expect((await jobs(api)['trello-test-connection'].post({} as never)).status).toBe(400);
+      expect(
+        (await jobs(api)['trello-test-connection'].post({ apiKey: 'key"', apiToken: 'token' }))
+          .status,
+      ).toBe(400);
+      expect(
+        (await jobs(api)['trello-preview'].post({ apiKey: 'key', apiToken: 'token' } as never))
+          .status,
+      ).toBe(400);
+      expect(
+        (
+          await jobs(api)['trello-preview'].post({
+            apiKey: 'key',
+            apiToken: 'token',
+            boardId: '../x',
+          })
+        ).status,
+      ).toBe(400);
+    });
+
+    it('denies a member whose role lacks the import_export permission', async () => {
+      const { api } = await setupOwnerProject();
+      const member = await addMember(api);
+      const credential = { apiKey: 'trellokey1', apiToken: 'ATTAtoken1' };
+      expect((await jobs(member)['trello-test-connection'].post(credential)).status).toBe(403);
+      expect(
+        (await jobs(member)['trello-preview'].post({ ...credential, boardId: 'board1' })).status,
+      ).toBe(403);
+      expect((await jobs(member).post(trelloBody)).status).toBe(403);
     });
   });
 

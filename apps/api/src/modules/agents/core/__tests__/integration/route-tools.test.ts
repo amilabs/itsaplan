@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { db, aiAgent, apikey, teamMember } from '@repo/db';
 import { eq } from 'drizzle-orm';
-import { authedApi, type Api } from '#tests/helpers/app';
+import { authedApi, type Api, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { getProjectByRef } from '#modules/projects/service';
@@ -11,7 +11,7 @@ import { AGENT_ACTIONS, ALWAYS_ON_ACTIONS } from '../../runtime/tools/catalog';
 import { routeTools } from '#mcp/generate';
 import { getMcpApp } from '#mcp/app-ref';
 import { createRole } from '#tests/helpers/roles';
-import { createAgent, setAgentProjectRole } from '#tests/helpers/agents';
+import { createAgent, projectIdOf, setAgentProjectRole } from '#tests/helpers/agents';
 
 // The tools an internal agent runs with, built from the routes tagged mcpTool() and
 // dispatched in process with the agent's own API key. What is asserted here is the
@@ -26,7 +26,7 @@ const agents = (api: Api, teamId: number) => api.teams({ teamId })['ai-agents'];
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  const project = await createProject(asOwner, { key: 'MKT', name: 'Marketing' });
   return { owner, asOwner, teamId: project.data!.teamId };
 }
 
@@ -80,6 +80,123 @@ describe('internal agent route tools', () => {
     // ...and an action that was not granted is absent.
     expect(tools.delete_issue).toBeUndefined();
     expect(tools.update_issue).toBeUndefined();
+    expect(tools.create_checklist_items).toBeUndefined();
+  });
+
+  it('opens an attachment: a text file as its text, an image as an image part', async () => {
+    const { asOwner } = await setup();
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const issue = await asOwner
+      .projects({ projectKey: 'MKT' })
+      .issues.post({ columnId: view.data!.columns[0]!.id, title: 'Task' });
+    const issueId = issue.data!.id;
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const image = await asOwner.issues({ issueId }).attachments.post({
+      file: new File([png], 'shot.png', { type: 'image/png' }),
+    });
+    const note = await asOwner.issues({ issueId }).attachments.post({
+      file: new File(['hello'], 'note.txt', { type: 'text/plain' }),
+    });
+    const tools = await toolsFor(asOwner, []);
+
+    expect(await run(tools, 'view_attachment', { attachment: note.data!.id })).toMatchObject({
+      images: [],
+      others: [{ id: note.data!.id, text: 'hello' }],
+    });
+
+    const viewed = await run(tools, 'view_attachment', { attachment: image.data!.id });
+    expect(await tools.view_attachment!.toModelOutput!(viewed)).toEqual({
+      type: 'content',
+      value: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            images: [{ id: image.data!.id, filename: 'shot.png', contentType: 'image/png' }],
+            others: [],
+          }),
+        },
+        { type: 'image-data', data: Buffer.from(png).toString('base64'), mediaType: 'image/png' },
+      ],
+    });
+  });
+
+  it('previews project activity only for the internal agent and retains full history', async () => {
+    const { asOwner } = await setup();
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const columnId = view.data!.columns[0]!.id;
+    const created = await asOwner.projects({ projectKey: 'MKT' }).issues.post({
+      columnId,
+      title: 'Large description',
+    });
+    expect(created.status).toBe(201);
+    const issueId = created.data!.id;
+    const description = 'Description detail. '.repeat(200);
+    const updated = await asOwner.issues({ issueId }).patch({ description });
+    expect(updated.status).toBe(200);
+    const tools = await toolsFor(asOwner, []);
+
+    const result = await run(tools, 'get_project_activity', { action: 'description', limit: 1 });
+    expect(result).toMatchObject({
+      items: [
+        {
+          issueId,
+          action: 'description',
+          payload: { to: { value: description.slice(0, 1000) } },
+          truncatedFields: [{ field: 'payload.to.value', originalLength: description.length }],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const rest = await asOwner.projects({ projectKey: 'MKT' }).analytics.activity.get({
+      query: { action: 'description' },
+    });
+    expect(rest.data?.items[0]?.payload.to?.value).toBe(description);
+    expect(rest.data?.items[0]).not.toHaveProperty('truncatedFields');
+    expect(await run(tools, 'list_issue_activity', { issueId })).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          action: 'description',
+          payload: { to: { value: description } },
+        }),
+      ]),
+    });
+    expect(await run(tools, 'get_issue', { issueId })).toMatchObject({ description });
+  });
+
+  it('keeps project activity cursors and rejects a project supplied by the model', async () => {
+    const { asOwner } = await setup();
+    await createProject(asOwner, { key: 'OPS', name: 'Operations' });
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const columnId = view.data!.columns[0]!.id;
+    for (const title of ['Alpha', 'Beta']) {
+      await asOwner.projects({ projectKey: 'MKT' }).issues.post({ columnId, title });
+    }
+    const tools = await toolsFor(asOwner, []);
+    const rest = await asOwner.projects({ projectKey: 'MKT' }).analytics.activity.get({
+      query: { limit: 1 },
+    });
+    const first = await run(tools, 'get_project_activity', { limit: 1, projectKey: 'OPS' });
+    expect(first).toMatchObject({ nextCursor: rest.data!.nextCursor });
+    const second = await run(tools, 'get_project_activity', {
+      limit: 1,
+      cursor: JSON.stringify(rest.data!.nextCursor),
+    });
+    expect(second).toMatchObject({
+      items: [expect.objectContaining({ issueTitle: 'Alpha' })],
+      nextCursor: null,
+    });
+  });
+
+  it('preserves project activity errors for an agent without dashboard read permission', async () => {
+    const { asOwner } = await setup();
+    const role = await createRole(asOwner, 'MKT', {
+      name: 'No dashboards',
+      permissions: { dashboards: { read: false } },
+    });
+    expect(role.status).toBe(201);
+    const tools = await toolsFor(asOwner, [], role.data!.id);
+    expect(await run(tools, 'get_project_activity')).toMatchObject({ error: expect.anything() });
   });
 
   it('reaches the real route: a create lands in the project, authored by the agent', async () => {
@@ -101,7 +218,7 @@ describe('internal agent route tools', () => {
 
   it('binds projectKey: it is not asked of the model and cannot be redirected', async () => {
     const { asOwner } = await setup();
-    await asOwner.projects.post({ key: 'OPS', name: 'Operations' });
+    await createProject(asOwner, { key: 'OPS', name: 'Operations' });
     const view = await asOwner.projects({ projectKey: 'MKT' }).get();
     const columnId = view.data?.columns[0]?.id;
     if (columnId === undefined) throw new Error('Test project has no columns');
@@ -173,12 +290,14 @@ describe('internal agent route tools', () => {
     expect(catalog.get('get_issue')).toEqual(['work_items', 'read']);
 
     // Everything else has one. prepare_issue_import and get_current_date have no
-    // route; charts and the project itself are open to any member of the project.
+    // route; charts and the project itself are open to any member of the project;
+    // view_attachment reads work_items or initiatives, by whose attachment it opens.
     expect([...catalog].filter(([, permission]) => !permission).map(([key]) => key)).toEqual([
       'prepare_issue_import',
       'create_chart',
       'get_current_date',
       'get_project',
+      'view_attachment',
     ]);
   });
 
@@ -224,6 +343,50 @@ describe('internal agent route tools', () => {
     expect(await run(tools, 'get_project')).toMatchObject({ columns: expect.any(Array) });
   });
 
+  it('appends a checklist batch through the granted route tool', async () => {
+    const { asOwner } = await setup();
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const issue = await asOwner.projects({ projectKey: 'MKT' }).issues.post({
+      columnId: view.data!.columns[0].id,
+      title: 'Release',
+    });
+    const checklist = await asOwner
+      .issues({ issueId: issue.data!.id })
+      .checklists.post({ title: 'Steps' });
+    const tools = await toolsFor(asOwner, ['create_checklist_items']);
+    const items = [{ content: 'Tag release' }, { content: 'Publish notes' }];
+    expect(
+      await run(tools, 'create_checklist_items', { checklistId: checklist.data!.id, items }),
+    ).toMatchObject(items);
+    const read = await asOwner.issues({ issueId: issue.data!.id }).get();
+    expect(read.data!.checklists[0].items).toMatchObject(items);
+  });
+
+  it('denies a checklist batch when the agent role cannot edit work items', async () => {
+    const { asOwner } = await setup();
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const issue = await asOwner.projects({ projectKey: 'MKT' }).issues.post({
+      columnId: view.data!.columns[0].id,
+      title: 'Release',
+    });
+    const checklist = await asOwner
+      .issues({ issueId: issue.data!.id })
+      .checklists.post({ title: 'Steps' });
+    const role = await createRole(asOwner, 'MKT', {
+      name: 'Read only',
+      permissions: { work_items: { read: true, edit: false } },
+    });
+    const tools = await toolsFor(asOwner, ['create_checklist_items'], role.data!.id);
+    expect(
+      await run(tools, 'create_checklist_items', {
+        checklistId: checklist.data!.id,
+        items: [{ content: 'Forbidden' }],
+      }),
+    ).toMatchObject({ error: expect.anything() });
+    const read = await asOwner.issues({ issueId: issue.data!.id }).get();
+    expect(read.data!.checklists[0].items).toEqual([]);
+  });
+
   it("enforces the agent's role: a forbidden action returns the route's error", async () => {
     const { asOwner } = await setup();
     const view = await asOwner.projects({ projectKey: 'MKT' }).get();
@@ -253,5 +416,173 @@ describe('internal agent route tools', () => {
     // A read the role does allow still works.
     const context = await run(tools, 'get_project');
     expect(context).toMatchObject({ columns: expect.any(Array) });
+  });
+
+  // A block is a relation, not text, so search_issues cannot find it.
+  it('blocked lists the issues an open issue is blocking, not those of a closed one', async () => {
+    const { asOwner } = await setup();
+    const view = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const columns = view.data?.columns ?? [];
+    const openId = columns.find((c) => c.stateType === 'backlog')?.id;
+    const doneId = columns.find((c) => c.stateType === 'completed')?.id;
+    if (openId === undefined || doneId === undefined) throw new Error('Missing columns');
+    const tools = await toolsFor(asOwner, ['create_issue', 'link_issues']);
+    const make = async (title: string, columnId: number) =>
+      ((await run(tools, 'create_issue', { columnId, title })) as { id: number }).id;
+    const openBlocker = await make('Open blocker', openId);
+    const held = await make('Held up', openId);
+    const doneBlocker = await make('Done blocker', doneId);
+    const freed = await make('No longer held up', openId);
+    await run(tools, 'link_issues', {
+      issueId: held,
+      targetIssueId: openBlocker,
+      kind: 'blocked_by',
+    });
+    await run(tools, 'link_issues', { issueId: doneBlocker, targetIssueId: freed, kind: 'blocks' });
+
+    const result = (await run(tools, 'list_issues', { blocked: 'true' })) as { title: string }[];
+
+    expect(result.map((i) => i.title)).toEqual(['Held up']);
+  });
+});
+
+// A run works in one project, and its tools are bound to it: an object addressed by id
+// that belongs to another project of the agent is refused, although the agent's bot
+// is a member there. Without the bound, whoever may start a run in MKT could make the
+// agent read and write OPS.
+describe('internal agent route tools are bound to the run project', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  // An agent that works in MKT and OPS, its tools built for a run in MKT, and an issue
+  // of each project.
+  async function crossProject(tools: string[]) {
+    const { asOwner, teamId } = await setup();
+    await createProject(asOwner, { key: 'OPS', name: 'Operations' });
+    const issueIn = async (projectKey: string, title: string) => {
+      const view = await asOwner.projects({ projectKey }).get();
+      const issue = await asOwner
+        .projects({ projectKey })
+        .issues.post({ columnId: view.data!.columns[0]!.id, title });
+      return issue.data!.id;
+    };
+    const mktIssue = await issueIn('MKT', 'Marketing plan');
+    const opsIssue = await issueIn('OPS', 'Pager rota');
+    const created = await createAgent(asOwner, 'MKT', {
+      name: 'Triage Bot',
+      username: `triage-${++agentSeq}`,
+      kind: 'internal',
+      tools,
+      projectIds: [await projectIdOf(asOwner, 'MKT'), await projectIdOf(asOwner, 'OPS')],
+    });
+    const project = await getProjectByRef('MKT', '');
+    if (!project) throw new Error('Test project was not created');
+    const agent = await getAgentById(created.data!.agent.id, teamId);
+    if (!agent) throw new Error('Test agent was not found');
+    const built = buildRouteTools(project, await getInternalAgentApiKey(agent), agent.tools);
+    return { asOwner, tools: built, mktIssue, opsIssue };
+  }
+
+  const outside = { error: { error: 'Outside the project this run works in' } };
+
+  it('refuses reading an issue of another project', async () => {
+    const { tools, mktIssue, opsIssue } = await crossProject([]);
+
+    expect(await run(tools, 'get_issue', { issueId: opsIssue })).toEqual(outside);
+    expect(await run(tools, 'list_issue_activity', { issueId: opsIssue })).toEqual(outside);
+    expect(await run(tools, 'get_issue', { issueId: mktIssue })).toMatchObject({
+      title: 'Marketing plan',
+    });
+  });
+
+  it('refuses writing to an issue of another project', async () => {
+    const { asOwner, tools, mktIssue, opsIssue } = await crossProject([
+      'add_comment',
+      'update_issue',
+    ]);
+
+    expect(await run(tools, 'add_comment', { issueId: opsIssue, body: 'From MKT' })).toEqual(
+      outside,
+    );
+    expect(await run(tools, 'update_issue', { issueId: opsIssue, title: 'Renamed' })).toEqual(
+      outside,
+    );
+    expect((await asOwner.issues({ issueId: opsIssue }).get()).data).toMatchObject({
+      title: 'Pager rota',
+    });
+    expect(await run(tools, 'add_comment', { issueId: mktIssue, body: 'Here' })).toMatchObject({
+      body: 'Here',
+    });
+  });
+
+  it('refuses a checklist of an issue of another project', async () => {
+    const { asOwner, tools, opsIssue } = await crossProject([
+      'create_checklist_item',
+      'create_checklist_items',
+    ]);
+    const checklist = await asOwner
+      .issues({ issueId: opsIssue })
+      .checklists.post({ title: 'Steps' });
+
+    expect(
+      await run(tools, 'create_checklist_item', { checklistId: checklist.data!.id, content: 'x' }),
+    ).toEqual(outside);
+    expect(
+      await run(tools, 'create_checklist_items', {
+        checklistId: checklist.data!.id,
+        items: [{ content: 'Forbidden' }],
+      }),
+    ).toEqual(outside);
+    const read = await asOwner.issues({ issueId: opsIssue }).get();
+    expect(read.data!.checklists[0].items).toEqual([]);
+  });
+
+  it('refuses a cycle and an initiative of another project', async () => {
+    const { asOwner, tools } = await crossProject(['update_cycle', 'update_initiative']);
+    const today = new Date().toISOString().slice(0, 10);
+    const cycle = await asOwner
+      .projects({ projectKey: 'OPS' })
+      .cycles.post({ name: 'Sprint 1', startDate: today, endDate: today });
+    const initiative = await asOwner
+      .projects({ projectKey: 'OPS' })
+      .initiatives.post({ title: 'Uptime' });
+
+    expect(await run(tools, 'get_cycle', { cycleId: cycle.data!.id })).toEqual(outside);
+    expect(await run(tools, 'update_cycle', { cycleId: cycle.data!.id, name: 'x' })).toEqual(
+      outside,
+    );
+    expect(await run(tools, 'get_initiative', { initiativeId: initiative.data!.id })).toEqual(
+      outside,
+    );
+    expect(
+      await run(tools, 'update_initiative', { initiativeId: initiative.data!.id, title: 'x' }),
+    ).toEqual(outside);
+  });
+
+  it('refuses any request bound to another project, and ignores a malformed bound', async () => {
+    const { owner, asOwner } = await setup();
+    await createProject(asOwner, { key: 'OPS', name: 'Operations' });
+    const view = await asOwner.projects({ projectKey: 'OPS' }).get();
+    const issue = await asOwner
+      .projects({ projectKey: 'OPS' })
+      .issues.post({ columnId: view.data!.columns[0]!.id, title: 'Pager rota' });
+    const issueId = issue.data!.id;
+    const mkt = String(await projectIdOf(asOwner, 'MKT'));
+    const ops = String(await projectIdOf(asOwner, 'OPS'));
+    const read = (bound: string) =>
+      authedApi(owner.cookie, { 'x-agent-project': bound }).issues({ issueId }).get();
+
+    const refused = await read(mkt);
+    expect(refused.status).toBe(403);
+    expect(refused.error!.value).toMatchObject({ error: 'Outside the project this run works in' });
+    expect((await read(ops)).status).toBe(200);
+    expect((await read('MKT')).status).toBe(200);
+  });
+
+  it('leaves a person reading the same issue alone', async () => {
+    const { asOwner, opsIssue } = await crossProject([]);
+
+    expect((await asOwner.issues({ issueId: opsIssue }).get()).status).toBe(200);
   });
 });

@@ -15,6 +15,7 @@ import {
   shareViewParams,
   sharedViewIssueParams,
 } from './model';
+import { getSharedViewCalendar } from './calendar';
 import {
   enableIssueShare,
   disableIssueShare,
@@ -29,16 +30,16 @@ export const shareRoutes = new Elysia({ name: 'share', detail: { tags: ['Share']
   .use(authContext)
   .use(guards)
   // Guards for the enable/revoke routes, which address an issue or a view by its
-  // own id. Sharing an issue is a work_items edit; sharing a view is a views edit.
+  // own id. Sharing an issue is a work_items edit; sharing a view is a views edit, and
+  // only a project's view has a share link: a private one is not found here.
   .macro({
     workItem: entityGuard('work_items', 'Issue not found', (p) =>
       getIssueProjectId(Number(p.issueId)),
     ),
-    savedView: entityGuard(
-      'views',
-      'View not found',
-      async (p) => (await getView(Number(p.viewId)))?.projectId ?? null,
-    ),
+    savedView: entityGuard('views', 'View not found', async (p, user) => {
+      const view = await getView(Number(p.viewId), user?.id ?? null);
+      return view && !view.isPrivate ? view.projectId : null;
+    }),
   })
 
   // --- Enable / revoke (session-gated) -------------------------------------------
@@ -132,6 +133,22 @@ export const shareRoutes = new Elysia({ name: 'share', detail: { tags: ['Share']
       params: shareTokenParams,
       response: { 200: BundleResponse, ...errors(400, 404) },
       detail: { summary: 'Get a shared view' },
+    },
+  )
+
+  .get(
+    '/share/view/:token/calendar.ics',
+    async ({ params, set }) => {
+      const feed = await getSharedViewCalendar(params.token);
+      if (!feed) throw new HttpError(404, 'Not found');
+      set.headers['content-type'] = 'text/calendar; charset=utf-8';
+      set.headers['cache-control'] = 'no-store';
+      return feed;
+    },
+    {
+      params: shareTokenParams,
+      response: { 200: t.String(), ...errors(400, 404) },
+      detail: { summary: 'Get a shared view calendar feed' },
     },
   )
 

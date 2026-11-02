@@ -1,7 +1,7 @@
 import { Memory } from '@mastra/memory';
-import { PostgresStore } from '@mastra/pg';
 import { db } from '@repo/db';
 import { sql } from 'drizzle-orm';
+import { likePattern } from '#shared/lib';
 import { appendTextPart, toolArgsText, toolText } from '../../chat-parts';
 import { deleteContextUsage } from '../../chat-usage';
 import {
@@ -11,7 +11,6 @@ import {
   FAVORITES_LIMIT,
 } from '../../chat-favorites';
 import {
-  likePattern,
   searchTerm,
   snippetOf,
   summarize,
@@ -19,6 +18,7 @@ import {
   type ThreadRow,
 } from '../../chat-history';
 import { toIso } from '../helpers/dates';
+import { getStore } from './store';
 import type { ChatMessageDTO, ChatMessagePage, ChatPart, ChatThreadPage } from '../../model';
 
 // Conversation memory for internal agents. Threads and their messages are
@@ -42,17 +42,6 @@ const THREAD_PAGE_SIZE = 25;
 // The length a title is cut to, the same for one the agent was given and one a member
 // typed.
 const TITLE_LIMIT = 80;
-
-let store: PostgresStore | null = null;
-
-function getStore(): PostgresStore {
-  if (!store) {
-    const url = process.env.DATABASE_URL;
-    if (!url) throw new Error('DATABASE_URL is required for agent memory');
-    store = new PostgresStore({ id: 'ai-agent-memory', connectionString: url });
-  }
-  return store;
-}
 
 export function buildMemory(lastMessages: number): Memory {
   return new Memory({
@@ -128,10 +117,11 @@ export async function deleteChatThread(threadId: string, resourceId: string): Pr
   return true;
 }
 
-// Deletes every thread bound to the given agent, project or schedule, with its
+// Deletes every thread bound to the given agent, project, issue or schedule, with its
 // messages, and returns how many were deleted. Called when that binding goes away.
 export async function deleteThreadsWhere(
-  binding: { agentId: number } | { projectId: number } | { scheduleId: number },
+  binding:
+    { agentId: number } | { projectId: number } | { issueId: number } | { scheduleId: number },
 ): Promise<number> {
   const memory = getReadMemory();
   const { threads } = await memory.listThreads({ filter: { metadata: binding }, perPage: false });

@@ -101,6 +101,8 @@
     "unreachable": "Impossible de joindre l'agent. Réessayez.",
     "runnerOffline": "Runner hors ligne",
     "runnerOfflineHint": "Démarrez le runner sur votre machine pour discuter avec cet agent.",
+    "chatDisabled": "Cet agent n'est pas disponible dans le chat",
+    "chatDisabledHint": "Le chat est désactivé pour cet agent. Les mentions, délégations et tâches planifiées fonctionnent toujours.",
     "attachFile": "Joindre un tableur, un document, un PDF ou un fichier texte à faire lire à l'agent",
     "removeAttachment": "Supprimer la pièce jointe",
     "uploadFailed": "Impossible d'envoyer le fichier.",
@@ -134,7 +136,9 @@
     "stopSharing": "Arrêter le partage",
     "createLink": "Créer un lien",
     "copy": "Copier",
-    "copied": "Copié"
+    "copied": "Copié",
+    "calendarFeed": "Flux de calendrier",
+    "calendarFeedHint": "Copiez ce lien dans votre application de calendrier pour vous abonner à cette vue."
   },
   "actions": "Actions",
   "clearSearch": "Effacer la recherche",
@@ -198,7 +202,8 @@
     "copiedLink": "Copié",
     "editLink": "Modifier le lien",
     "retryPreview": "Réessayer",
-    "copyLinkFailed": "Impossible de copier le lien. Sélectionnez et copiez l’URL ci-dessus."
+    "copyLinkFailed": "Impossible de copier le lien. Sélectionnez et copiez l’URL ci-dessus.",
+    "todoList": "Liste de tâches"
   },
   "chart": {
     "download": "Enregistrer le graphique",
@@ -211,5 +216,7 @@
     "page": "Page {number}",
     "perPage": "par page",
     "range": "{first}-{last} sur {total}"
-  }
+  },
+  "aboutCloudAndPro": "En savoir plus sur Cloud et Pro",
+  "signingOut": "Déconnexion…"
 }

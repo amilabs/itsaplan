@@ -3,14 +3,14 @@
   "subtitle": "接受邀请即可开始协作",
   "notFoundTitle": "找不到邀请",
   "notFoundSubtitle": "此链接无效或已失效",
-  "notFoundMessage": "此邀请链接无效或已撤销。",
   "goToSignIn": "前往登录",
   "closedTitle": "邀请已关闭",
   "closedSubtitle": "此邀请已{status, select, accepted {接受} rejected {拒绝} other {关闭}}",
+  "expiredTitle": "邀请已过期",
+  "expiredSubtitle": "请让邀请你的人重新发送",
   "brandSubtitle": "有人邀请你一起协作。",
   "teamLabel": "团队",
   "projectLabel": "项目",
-  "alreadyHandled": "此邀请已{status, select, accepted {接受} rejected {拒绝} other {关闭}}。",
   "goToApp": "打开应用",
   "alreadyMember": "你已经是该项目的成员，无需接受。",
   "goToProject": "打开项目",
@@ -36,7 +36,18 @@
   "switchToRegister": "创建账户",
   "existingAccountNotice": "此邮箱已有账户，请使用密码登录。",
   "passwordsDoNotMatch": "两次输入的密码不一致。",
-  "genericError": "出现错误，请重试。",
   "registerFailed": "无法创建账户。",
-  "signInFailed": "无法登录。"
+  "signInFailed": "无法登录。",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

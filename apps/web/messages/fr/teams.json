@@ -1,4 +1,5 @@
 {
+  "archived": "Archivé",
   "create": {
     "title": "Nouvelle équipe",
     "namePlaceholder": "Nom de l'équipe",
@@ -9,6 +10,8 @@
     "submit": "Créer l'équipe"
   },
   "sections": {
+    "collapse": "Réduire les sections",
+    "expand": "Développer les sections",
     "info": {
       "title": "Informations",
       "description": "L'équipe et votre place au sein de celle-ci."
@@ -16,6 +19,10 @@
     "projects": {
       "title": "Projets",
       "description": "Les projets que cette équipe détient."
+    },
+    "templates": {
+      "title": "Modèles de projet",
+      "description": "Paramètres enregistrés à partir desquels les nouveaux projets démarrent."
     },
     "members": {
       "title": "Membres de l'équipe",
@@ -48,6 +55,13 @@
     "agents": {
       "title": "Agents IA",
       "description": "Les agents IA que cette équipe détient, et les projets dans lesquels chacun travaille."
+    },
+    "analytics": {
+      "title": "Consommation",
+      "description": "Ce que les agents de l'équipe ont dépensé en modèles, par agent, projet et jour."
+    },
+    "queue": {
+      "title": "Exécutions d'agents"
     }
   },
   "info": {
@@ -61,10 +75,19 @@
     "leads": "Propriétaires et responsables",
     "leadsHint": "Les personnes qui peuvent gérer cette équipe et ses projets.",
     "saved": "Équipe enregistrée",
-    "leaveHint": "Vous conservez les projets dont vous êtes membre. Pour revenir, un propriétaire doit vous ajouter à nouveau."
+    "leaveHint": "Vous conservez les projets dont vous êtes membre. Pour revenir, un propriétaire doit vous ajouter à nouveau.",
+    "delete": {
+      "action": "Supprimer l'équipe",
+      "hint": "Ses membres, rôles, modèles de projet, invitations, compétences, outils et intégrations sont supprimés avec elle. Les personnes conservent leur compte et leurs autres équipes.",
+      "blocked": "Supprimez d'abord les projets et les agents IA de l'équipe.",
+      "title": "Supprimer {name} ?",
+      "description": "<strong>{name}</strong> est supprimée avec ses membres, rôles, modèles de projet, invitations, compétences, outils et intégrations. Les personnes conservent leur compte et leurs autres équipes. Cette action est irréversible.",
+      "deleted": "Équipe supprimée"
+    }
   },
   "columns": {
     "project": "Projet",
+    "template": "Modèle",
     "owners": "Propriétaires",
     "members": "Membres",
     "created": "Créé le",
@@ -80,6 +103,7 @@
     "emailPlaceholder": "nom@exemple.com",
     "alreadyMember": "{email} fait déjà partie de cette équipe",
     "alreadyPending": "{email} a déjà une invitation en attente",
+    "domainNotAllowed": "Le domaine de {email} n'est pas autorisé sur cette instance",
     "refused": "{email} n'a pas pu être invité",
     "roleLabel": "Rôle dans l'équipe",
     "roleHint": {
@@ -92,11 +116,16 @@
     "joinsProject": "Rejoint l'équipe et {project}",
     "copyLink": "Copier le lien",
     "copied": "Copié",
+    "resendEmail": "Envoyer l'e-mail",
+    "resendingEmail": "Envoi…",
     "revokeAction": "Révoquer l'invitation",
     "revokeTitle": "Révoquer l'invitation de {email} ?",
     "revokeConfirm": "Révoquer l'invitation",
     "revokeDescription": "Le lien cesse de fonctionner. Vous pourrez réinviter cette personne plus tard.",
-    "pending": "Invité"
+    "pending": "Invité",
+    "expiredAt": "expirée le {date}",
+    "renew": "Renouveler",
+    "renewing": "Renouvellement…"
   },
   "manage": {
     "label": "Gérer les équipes",
@@ -117,9 +146,9 @@
     "search": "Rechercher des rôles",
     "noMatches": "Aucun rôle ne correspond à « {query} ».",
     "default": "Par défaut",
+    "system": "Système",
     "editAction": "Modifier le rôle",
     "deleteAction": "Supprimer le rôle",
-    "defaultUndeletable": "Le rôle par défaut ne peut pas être supprimé",
     "deleteTitle": "Supprimer le rôle « {name} »",
     "deleteDescription": "Rien n'est rattaché à ce rôle. Cette action est irréversible.",
     "deleteInUse": "Ce rôle est encore utilisé. Choisissez le rôle vers lequel tout est déplacé.",
@@ -133,16 +162,6 @@
     "moveAndDelete": "Déplacer et supprimer",
     "noTargetRole": "Il n'y a aucun autre rôle vers lequel les déplacer. Créez-en un d'abord.",
     "newRole": "Nouveau rôle",
-    "editorTitleEdit": "Modifier le rôle",
-    "editorTitleNew": "Nouveau rôle",
-    "namePlaceholder": "ex. Contributeur",
-    "resourceColumn": "Ressource",
-    "toggleActionAll": "Basculer {action} pour toutes les ressources",
-    "toggleGroupAll": "Basculer toutes les permissions de {group}",
-    "toggleActionGroup": "Basculer {action} pour {group}",
-    "cellAria": "{resource} : {action}",
-    "saveRole": "Enregistrer le rôle",
-    "createRole": "Créer le rôle",
     "copyRoles": "Copier les rôles",
     "pasteRoles": "Coller des rôles",
     "nothingToCopy": "Aucun rôle personnalisé à copier.",
@@ -159,13 +178,29 @@
       "actions": {
         "create": "Nouveau",
         "update": "Écraser",
-        "skip": "Ignorer (par défaut)"
+        "skip": "Ignorer (rôle système)"
       }
     },
     "transferErrors": {
       "invalidJson": "Le presse-papiers ne contient pas de JSON valide.",
       "notAnExport": "Le presse-papiers ne contient pas d'export de rôles.",
       "empty": "L'export de rôles est vide."
+    }
+  },
+  "templates": {
+    "ownerOnly": "Seul un propriétaire ou un responsable de l'équipe peut gérer les modèles de projet.",
+    "empty": "Aucun modèle de projet pour l'instant",
+    "emptyHint": "Enregistrez un projet comme modèle pour créer de nouveaux projets à partir de celui-ci.",
+    "openProjects": "Voir les projets",
+    "deleteAction": "Supprimer le modèle",
+    "deleteDialog": {
+      "title": "Supprimer le modèle « {name} » ?",
+      "description": "Les projets créés à partir de ce modèle restent inchangés.",
+      "confirm": "Supprimer le modèle"
+    },
+    "panel": {
+      "saved": "Enregistré le {date}",
+      "none": "Aucun"
     }
   },
   "panel": {
@@ -219,6 +254,8 @@
     "timeout": "Délai d'attente (s)",
     "optional": "Facultatif",
     "apiKey": "Clé d'API",
+    "from": "Adresse d'expédition",
+    "fromHint": "Obligatoire pour Resend. Avec SMTP, elle reprend le nom d'utilisateur par défaut.",
     "telegramBot": "Bot Telegram",
     "telegramBotHint": "Le bot qui envoie les notifications pour chaque projet de l'équipe. Les membres choisissent leur propre discussion dans leurs préférences. Le jeton est stocké chiffré.",
     "botToken": "Token d'API du bot (facultatif)",
@@ -358,6 +395,8 @@
     "username": "Nom d'utilisateur",
     "usernamePlaceholder": "ex. bot-triage",
     "usernameHint": "Lettres, chiffres, points, tirets et tirets bas. Jusqu'à 64 caractères.",
+    "chat": "Chat",
+    "chatHint": "Permet à un membre d'ouvrir ou de poursuivre un chat avec cet agent. Désactivé, il disparaît du sélecteur de chat ; les mentions, délégations et tâches planifiées continuent de l'exécuter.",
     "access": "Disponibilité",
     "accessHint": "Qui peut confier des tâches à cet agent",
     "model": "Modèle",
@@ -389,8 +428,46 @@
     "runDelay": "Attendre avant de démarrer",
     "runDelayHint": "Le temps laissé pour continuer à modifier le ticket avant que l'agent démarre. 0 démarre immédiatement.",
     "minutes": "min",
-    "runner": "Runner",
-    "runnerHint": "Le processus sur votre machine qui exécute les tâches de cet agent",
+    "connection": "Connexion",
+    "connectionHint": "Comment l'agent reçoit ses tâches",
+    "deliveryRunner": "Runner",
+    "deliveryRunnerHint": "Votre machine demande les tâches",
+    "deliveryUrl": "Endpoint",
+    "deliveryUrlHint": "Votre URL reçoit les tâches",
+    "invocationUrl": "URL de l'endpoint",
+    "invocationUrlPlaceholder": "https://example.com/agent",
+    "invocationUrlHint": "Reçoit chaque tâche et chaque message de chat en POST signé.",
+    "invocationUnsaved": "Enregistrez pour envoyer les tâches à cette URL.",
+    "invocationSecretOnSave": "Enregistrez l'URL pour obtenir le secret de signature.",
+    "invocationSecret": "Secret de signature",
+    "invocationSecretHint": "Utilisez-le pour vérifier l'en-tête X-Itsaplan-Signature.",
+    "invocationSecretRotated": "Secret de signature régénéré",
+    "invocationRotate": "Régénérer le secret",
+    "invocationRotateTitle": "Régénérer le secret de signature ?",
+    "invocationRotateMessage": "Les requêtes pour <v>{name}</v> passent tout de suite au nouveau secret. Mettez à jour votre endpoint, sinon il refusera les prochaines tâches.",
+    "invocationTest": "Requête de test",
+    "invocationTestHint": "Envoie un ping signé à l'URL enregistrée.",
+    "invocationTestSend": "Envoyer un test",
+    "invocationTestSending": "Envoi…",
+    "invocationTestOk": "Réponse {status} en {ms} ms",
+    "invocationTestRefused": "Réponse {status}. 2xx attendu.",
+    "invocationTestTimeout": "Pas de réponse à temps. Répondez d'abord, puis faites le travail.",
+    "invocationTestUnreachable": "Impossible de joindre l'endpoint",
+    "invocationHelpOpen": "Comment créer l'endpoint",
+    "invocationHelpTitle": "Recevoir les tâches sur une URL",
+    "invocationHelpVerify": "Vérifiez la signature",
+    "invocationHelpVerifyHint": "HMAC-SHA256 de l'horodatage, d'un point et du corps brut, avec le secret de signature comme clé. Refusez les requêtes de plus de cinq minutes.",
+    "invocationHelpAccept": "Répondez 2xx tout de suite",
+    "invocationHelpAcceptHint": "Travaillez après avoir répondu. Avec tout autre statut, une tâche revient plus tard et un message de chat échoue aussitôt.",
+    "invocationHelpPayload": "Lisez la tâche",
+    "invocationHelpPayloadHint": "Le champ event indique ce qui arrive : une tâche, un message de chat ou un ping de test.",
+    "invocationHelpTabRun": "Tâche",
+    "invocationHelpTabChat": "Message de chat",
+    "invocationHelpTabPing": "Ping de test",
+    "invocationHelpReport": "Envoyez le résultat avec la clé de l'agent",
+    "invocationHelpReportHint": "Pendant le travail, envoyez un heartbeat au moins toutes les 5 minutes. Puis envoyez le résultat. Vous pouvez envoyer une réponse de chat en plusieurs parties.",
+    "invocationHelpTest": "Envoyez une requête de test",
+    "invocationHelpTestHint": "La section Connexion montre comment votre endpoint a répondu.",
     "runnerWayCli": "CLI du runner",
     "runnerWayCliHint": "Notre paquet npm. Faites-le pointer vers un agent de code : il interroge les tâches et rend compte. Nécessite un fichier de configuration contenant la clé de l'agent.",
     "runnerWayApi": "Votre propre code",
@@ -413,7 +490,7 @@
     "runnerHelpTabCustom": "Le vôtre",
     "runnerHelpPiAdapter": "Pi lit .mcp.json via une extension. Installez-la une fois : pi install npm:pi-mcp-adapter",
     "runnerHelpCheck": "Vérifiez qu'il est connecté",
-    "runnerHelpCheckHint": "La section Runner affiche En ligne.",
+    "runnerHelpCheckHint": "La section Connexion affiche En ligne.",
     "runnerOnline": "Runner en ligne",
     "runnerOffline": "Runner hors ligne",
     "runnerNever": "Aucun runner pour l'instant",
@@ -421,6 +498,8 @@
     "runnerStateOffline": "Hors ligne",
     "runnerStateNone": "Non connecté",
     "runnerSeen": "Vu il y a {time}",
+    "runnerStateUrl": "Endpoint",
+    "runnerUrl": "Reçoit les tâches sur son URL",
     "actions": "Actions",
     "actionsHint": "Ce que l'agent peut faire dans le projet",
     "searchActions": "Rechercher une action",
@@ -450,10 +529,17 @@
     "goToTools": "Aller aux outils",
     "searchTools": "Rechercher un outil",
     "advanced": "Avancé",
-    "advancedHint": "Échantillonnage, limite d'étapes et mémoire",
+    "advancedHint": "Échantillonnage, raisonnement, limites d'étapes et de durée, et mémoire",
     "temperature": "Température",
+    "reasoningEffort": "Effort de raisonnement",
+    "reasoningEffortDefault": "Valeur par défaut du fournisseur",
+    "reasoningEffortLow": "Faible",
+    "reasoningEffortMedium": "Moyen",
+    "reasoningEffortHigh": "Élevé",
     "optional": "Facultatif",
     "maxSteps": "Étapes maximum",
+    "runTimeout": "Durée maximale (s)",
+    "runTimeoutDefault": "Maximum de l'instance",
     "memory": "Mémoire de conversation",
     "memoryHint": "Se souvenir des messages récents au sein d'un fil de conversation.",
     "memoryCount": "Retenir les N derniers messages",
@@ -477,6 +563,7 @@
     "endOfHistory": "Fin de l'historique",
     "manualTask": "Tâche manuelle",
     "scheduledTask": "Tâche planifiée",
+    "documentTask": "Commentaire dans un document",
     "failed": "En échec",
     "task": "Tâche",
     "error": "Erreur",
@@ -538,5 +625,167 @@
     "projectsHint": "Un nouveau projet démarre avec la valeur par défaut de l'instance.",
     "noProjects": "Cette équipe n'a encore aucun projet.",
     "projectToggleAria": "Basculer l'accès MCP pour {project}"
+  },
+  "workspace": {
+    "rail": "Espaces de travail",
+    "create": "Nouvel espace de travail",
+    "createUnavailableTitle": "Plus d'espaces de travail",
+    "createUnavailableHint": "Plusieurs espaces de travail par personne sont disponibles dans Cloud et dans Pro auto-hébergé.",
+    "general": "Général",
+    "roles": {
+      "owner": "Propriétaire",
+      "admin": "Administrateur"
+    },
+    "titles": {
+      "owner": "Propriétaire de l'espace",
+      "admin": "Administrateur de l'espace"
+    },
+    "info": {
+      "title": "Espace de travail",
+      "description": "L'espace de travail auquel appartiennent vos équipes.",
+      "workspace": "Espace de travail",
+      "workspaceHint": "Le nom que tout le monde voit.",
+      "role": "Votre rôle",
+      "saved": "Espace de travail enregistré",
+      "color": "Couleur",
+      "colorReset": "Par défaut"
+    },
+    "teamCreation": {
+      "title": "Qui crée des équipes",
+      "description": "Qui crée une équipe en est le propriétaire.",
+      "ownerOnly": "Seul le propriétaire décide qui crée des équipes.",
+      "owner": "Seulement le propriétaire",
+      "managers": "Le propriétaire et les administrateurs",
+      "members": "Tous les membres de ses équipes"
+    },
+    "runLimit": {
+      "title": "Exécutions d'agents simultanées",
+      "description": "Nombre d'exécutions de ses agents en même temps. Les autres attendent en file d'attente. 0 signifie aucune limite propre.",
+      "descriptionCapped": "Nombre d'exécutions de ses agents en même temps, jusqu'à {max}. Les autres attendent en file d'attente. Avec 0, la limite est de {max}.",
+      "ownerOnly": "Seul le propriétaire modifie le nombre d'exécutions d'agents simultanées.",
+      "none": "Aucune limite"
+    },
+    "managers": {
+      "title": "Responsables",
+      "description": "Le propriétaire et les administrateurs gèrent l'espace de travail.",
+      "ownerOnly": "Le propriétaire et les administrateurs gèrent l'espace de travail. Seul le propriétaire ajoute ou retire des administrateurs.",
+      "person": "Personne",
+      "role": "Rôle",
+      "addAction": "Ajouter un administrateur",
+      "addTitle": "Ajouter un administrateur",
+      "addDescription": "Choisissez quelqu'un dans les équipes de l'espace de travail.",
+      "search": "Rechercher par nom ou e-mail",
+      "noCandidates": "Personne à ajouter",
+      "added": "{name} est maintenant administrateur",
+      "removeAction": "Retirer l'administrateur",
+      "removeTitle": "Retirer {name} des administrateurs ?",
+      "removeDescription": "Cette personne reste dans ses équipes, mais ne peut plus gérer l'espace de travail.",
+      "removed": "{name} n'est plus administrateur"
+    },
+    "scim": {
+      "title": "SCIM",
+      "description": "Permettez à un fournisseur d'identité d'ajouter des personnes à cet espace de travail, de les en retirer et d'accorder l'accès aux projets via ses groupes.",
+      "saved": "Paramètres SCIM enregistrés",
+      "provisioning": "Provisionnement",
+      "provisioningConfigured": "Votre fournisseur d'identité ajoute des personnes à cet espace de travail et les en retire.",
+      "provisioningInstance": "Votre fournisseur d'identité crée, met à jour et désactive les comptes de cette instance.",
+      "provisioningMissing": "Générez d'abord un token.",
+      "token": "Token",
+      "noToken": "Aucun token généré pour l'instant",
+      "tokenHint": "Le token bearer que votre fournisseur d'identité envoie. Il n'est affiché qu'une fois ; en générer un nouveau invalide l'ancien.",
+      "generateToken": "Générer un token",
+      "replaceToken": "Remplacer le token",
+      "baseUrl": "Point d'accès SCIM",
+      "baseUrlHint": "Faites pointer votre fournisseur d'identité vers cette adresse.",
+      "copyBaseUrl": "Copier le point d'accès SCIM",
+      "groups": "Groupes",
+      "groupsHint": "Les groupes transmis par votre fournisseur d'identité. La liste vient de lui ; ce que chaque groupe accorde se définit ici.",
+      "groupsEmpty": "Aucun groupe n'a encore été transmis.",
+      "memberCount": "{count, plural, =0 {Aucun membre} one {# membre} other {# membres}}",
+      "grantsNothing": "n'accorde rien pour l'instant",
+      "editMappings": "Modifier l'accès",
+      "roleOwner": "Propriétaire",
+      "roleMember": "Membre",
+      "tokenDialog": {
+        "title": "Générer un token SCIM",
+        "description": "Le token n'est affiché qu'une fois et ne peut pas être relu. Tout token déjà en usage cesse de fonctionner.",
+        "submit": "Générer",
+        "submitPending": "Génération…",
+        "createdTitle": "Votre token SCIM",
+        "createdDescription": "Copiez-le dès maintenant dans votre fournisseur d'identité. Il ne sera plus affiché.",
+        "copy": "Copier le token"
+      },
+      "mappings": {
+        "title": "Ce que {group} accorde",
+        "description": "Les membres de ce groupe rejoignent les projets listés ici. Retirer un projet supprime les adhésions que ce groupe y avait accordées.",
+        "empty": "Ce groupe n'accorde rien pour l'instant.",
+        "addProject": "Ajouter un projet…",
+        "role": "Rôle",
+        "roleOwner": "Propriétaire",
+        "roleMember": "Membre",
+        "projectRole": "Rôle dans le projet",
+        "defaultRole": "Rôle par défaut",
+        "remove": "Retirer le projet",
+        "saved": "Accès du groupe enregistré"
+      }
+    },
+    "delete": {
+      "action": "Supprimer l'espace de travail",
+      "hint": "Ses équipes sont supprimées avec lui. Les personnes gardent leur compte et leurs autres équipes.",
+      "blocked": "Supprimez d'abord les projets et les agents IA de ses équipes.",
+      "title": "Supprimer {name} ?",
+      "description": "<strong>{name}</strong> et ses équipes sont supprimés. Les personnes gardent leur compte et leurs autres équipes. Cette action est irréversible.",
+      "deleted": "Espace de travail supprimé"
+    },
+    "agentUsage": {
+      "title": "Consommation IA",
+      "description": "Ce que les agents de toutes les équipes ont dépensé en modèles."
+    },
+    "settingsGroup": "Paramètres",
+    "modelPrices": {
+      "title": "Prix des modèles",
+      "description": "Consommation IA calcule le coût de chaque appel de modèle à ces prix, par million de tokens. Une modification recalcule aussi les appels passés.",
+      "used": {
+        "title": "Utilisés dans cet espace de travail",
+        "description": "Les modèles que vos agents ont appelés ces 90 derniers jours, et ceux auxquels vous avez donné un prix.",
+        "unpriced": "{count, plural, one {# modèle n’a pas de prix : ses appels ne comptent pas dans le coût.} other {# modèles n’ont pas de prix : leurs appels ne comptent pas dans le coût.}}",
+        "empty": "Aucun appel de modèle ces 90 derniers jours. Un modèle apparaît ici dès que vos agents l’appellent."
+      },
+      "all": {
+        "title": "Tous les modèles",
+        "description": "Prix intégrés. Fixez votre propre prix pour n’importe quel modèle.",
+        "search": "Rechercher des modèles",
+        "noMatch": "Aucun modèle ne correspond à « {query} »."
+      },
+      "columns": {
+        "model": "Modèle",
+        "calls": "Appels",
+        "input": "Entrée",
+        "output": "Sortie",
+        "cacheRead": "Lecture du cache",
+        "cacheWrite": "Écriture du cache",
+        "price": "Prix"
+      },
+      "source": {
+        "own": "Le vôtre",
+        "builtIn": "Intégré",
+        "none": "Sans prix"
+      },
+      "setPrice": "Fixer le prix",
+      "edit": "Modifier",
+      "setTitle": "Fixer le prix",
+      "editTitle": "Modifier le prix",
+      "perMillion": "USD par million de tokens.",
+      "builtInPrice": "Intégré : {input} en entrée, {output} en sortie.",
+      "noBuiltInPrice": "Ce modèle n’a pas de prix intégré.",
+      "sameAsInput": "Comme l’entrée",
+      "appliesToPast": "S’applique à tous les appels de ce modèle dans cet espace de travail, passés compris.",
+      "useBuiltIn": "Revenir au prix intégré",
+      "removePrice": "Supprimer le prix",
+      "save": "Enregistrer le prix"
+    },
+    "queue": {
+      "title": "Exécutions d'agents"
+    }
   }
 }

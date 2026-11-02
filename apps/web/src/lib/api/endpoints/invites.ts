@@ -1,4 +1,5 @@
 import { request } from '@/lib/api/core/client';
+import { pageQuery, type Page, type PageParams } from '@/lib/api/core/paging';
 import type { MemberRole } from '@/lib/api/endpoints/members';
 
 export type InviteStatus = 'pending' | 'accepted' | 'rejected';
@@ -8,10 +9,11 @@ export type InviteStatus = 'pending' | 'accepted' | 'rejected';
 export type InviteTeamRole = 'owner' | 'manager' | 'member';
 
 // An invite as shown to whoever manages a team's or a project's invites: carries the
-// token so they can share the link, and who sent it.
+// token so they can share the link, and who sent it. The token is null where the
+// viewer could not have sent the invite.
 export interface InviteRow {
   id: number;
-  token: string;
+  token: string | null;
   email: string;
   teamRole: InviteTeamRole;
   // The project the invitee joins along with the team, or null for an invite into
@@ -26,13 +28,19 @@ export interface InviteRow {
   roleName: string | null;
   status: InviteStatus;
   createdAt: string;
+  // When a pending invite stops working; null once it was answered or when invites
+  // never expire.
+  expiresAt: string | null;
   respondedAt: string | null;
   invitedByName: string | null;
   invitedByEmail: string | null;
 }
 
 export interface InviteCreateResult extends InviteRow {
+  token: string;
   emailQueued: boolean;
+  // A mail provider is set but the email could not go out; the link still works.
+  emailFailed: boolean;
 }
 
 export interface InviteEmailResult {
@@ -54,6 +62,7 @@ export interface InviteView {
   roleName: string | null;
   status: InviteStatus;
   createdAt: string;
+  expired: boolean;
   // Whether the invited email already has an account, so the accept screen can
   // open in sign-in mode instead of registration.
   hasAccount: boolean;
@@ -88,16 +97,42 @@ export const sendInviteEmail = (projectKey: string, inviteId: number) =>
     method: 'POST',
   });
 
+// A renewed invite is a new one under a new link; the expired one is gone.
+export const renewInvite = (projectKey: string, inviteId: number) =>
+  request<InviteCreateResult>(`/projects/${projectKey}/invites/${inviteId}/renew`, {
+    method: 'POST',
+  });
+
 export const deleteInvite = (projectKey: string, inviteId: number) =>
   request<void>(`/projects/${projectKey}/invites/${inviteId}`, { method: 'DELETE' });
 
 export const listTeamInvites = (teamId: number) => request<InviteRow[]>(`/teams/${teamId}/invites`);
 
+// Someone an invite into the team can be addressed to: an account of the instance
+// outside the team.
+export interface InviteCandidate {
+  userId: string;
+  name: string;
+  email: string;
+  image: string | null;
+}
+
+export const listInviteCandidates = (teamId: number, search: string) =>
+  request<InviteCandidate[]>(
+    `/teams/${teamId}/invites/candidates?${new URLSearchParams({ search })}`,
+  );
+
 export const createTeamInvite = (teamId: number, input: { email: string; role: InviteTeamRole }) =>
-  request<InviteRow>(`/teams/${teamId}/invites`, {
+  request<InviteCreateResult>(`/teams/${teamId}/invites`, {
     method: 'POST',
     body: JSON.stringify(input),
   });
+
+export const sendTeamInviteEmail = (teamId: number, inviteId: number) =>
+  request<InviteEmailResult>(`/teams/${teamId}/invites/${inviteId}/email`, { method: 'POST' });
+
+export const renewTeamInvite = (teamId: number, inviteId: number) =>
+  request<InviteCreateResult>(`/teams/${teamId}/invites/${inviteId}/renew`, { method: 'POST' });
 
 export const deleteTeamInvite = (teamId: number, inviteId: number) =>
   request<void>(`/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' });
@@ -112,3 +147,12 @@ export const acceptInvite = (token: string) =>
 
 export const rejectInvite = (token: string) =>
   request<void>(`/invites/${encodeURIComponent(token)}/reject`, { method: 'POST' });
+
+export interface ReceivedInvite {
+  token: string;
+  teamName: string;
+  projectName: string | null;
+}
+
+export const listReceivedInvites = (params: PageParams) =>
+  request<Page<ReceivedInvite>>(`/me/invites${pageQuery(params)}`);

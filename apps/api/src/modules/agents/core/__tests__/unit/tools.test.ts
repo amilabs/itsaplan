@@ -84,6 +84,7 @@ describe('normalizeToolKeys', () => {
       'create_document',
       'update_document',
       'delete_document',
+      'add_document_comment',
     ];
     expect(normalizeToolKeys(keys)).toEqual(keys);
   });
@@ -101,6 +102,9 @@ describe('normalizeToolKeys', () => {
       'update_ai_agent',
       'delete_ai_agent',
       'regenerate_ai_agent_key',
+      'get_ai_agent_invocation_secret',
+      'rotate_ai_agent_invocation_secret',
+      'test_ai_agent_invocation',
       'run_ai_agent',
     ];
     expect(normalizeToolKeys(management)).toEqual([]);

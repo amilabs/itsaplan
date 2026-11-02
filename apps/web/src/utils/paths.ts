@@ -27,6 +27,7 @@ export const dashboardsPath = (ref: string) => `${projectPath(ref)}/dashboards`;
 // Public read-only share pages (no auth). The token is the unguessable share key.
 export const shareIssuePath = (token: string) => `/share/issue/${token}`;
 export const shareViewPath = (token: string) => `/share/view/${token}`;
+export const shareViewCalendarPath = (token: string) => `/share/view/${token}/calendar.ics`;
 
 // The absolute share URL to copy, built from the current origin at call time.
 export const shareUrl = (path: string) =>
@@ -47,8 +48,10 @@ export const documentPath = (ref: string, documentId: number) =>
 export const settingsPath = (ref: string, section: string) =>
   `${projectPath(ref)}/settings/${section}`;
 
-// The AI Team destinations listed in the main sidebar (see AI_TEAM_SECTIONS).
+// The AI Team destinations listed in the main sidebar (see useAiTeamSections).
 export const aiTeamPath = (ref: string, section: string) => `${projectPath(ref)}/agents/${section}`;
+
+export const runnerQueuePath = (ref: string) => aiTeamPath(ref, 'queue');
 
 export const inboxPath = (ref: string) => `${projectPath(ref)}/inbox`;
 
@@ -70,6 +73,9 @@ export const issuePath = (ref: string, sequenceNumber: number) => {
   const { teamRef, key } = splitProjectRef(ref);
   return `/${encodeURIComponent(teamRef)}/issue/${encodeURIComponent(key)}-${sequenceNumber}`;
 };
+
+export const commentPath = (ref: string, sequenceNumber: number, commentId: number) =>
+  `${issuePath(ref, sequenceNumber)}#comment-${commentId}`;
 
 // "MKT-42" -> { key: 'MKT', sequenceNumber: 42 }, or null for anything else.
 export function parseIssueIdentifier(
@@ -149,14 +155,17 @@ export const manageTeamsPath = () => '/account/teams';
 export type TeamSection =
   | 'info'
   | 'projects'
+  | 'templates'
   | 'members'
   | 'roles'
   | 'integrations'
   | 'git'
   | 'mcp'
   | 'ai-agents'
+  | 'queue'
   | 'agent-skills'
   | 'agent-tools'
+  | 'analytics'
   | 'notifications';
 
 // A team's settings, under the team's ref (Team.ref): /acme/settings.
@@ -164,6 +173,12 @@ export const teamPath = (teamRef: string) => `/${encodeURIComponent(teamRef)}/se
 
 export const teamSectionPath = (teamRef: string, section: TeamSection) =>
   section === 'info' ? teamPath(teamRef) : `${teamPath(teamRef)}/${section}`;
+
+// A workspace's settings, which only its owner and admins open. `section` is one of the
+// settings pages ('info', 'managers') or an id a hosted build adds; without one, the path
+// opens the first entry of the workspace's settings menu.
+export const workspacePath = (workspaceId: number, section?: string) =>
+  section ? `/workspaces/${workspaceId}/${section}` : `/workspaces/${workspaceId}`;
 
 // The invitee-facing link an owner shares. Points at this web app's public
 // /invite/:token page, which reads the token and shows the accept screen.

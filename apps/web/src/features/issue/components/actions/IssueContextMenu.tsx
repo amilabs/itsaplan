@@ -33,6 +33,7 @@ import { ShellCtx } from '@/context/shellContext';
 import { useArchiveAction } from '../../hooks/useArchiveAction';
 import { ApplyActionDialog, DeleteIssueDialog, matchedActions } from './IssueActions';
 import { buildIssueBranchName, buildIssuePrompt } from '../../utils/issuePrompt';
+import { writeClipboardText } from '../../utils/clipboard';
 import { delegatableAgents } from '../../utils/delegates';
 import { useSession } from '@/lib/auth-client';
 import { toDateStr } from '@/utils/dates';
@@ -83,7 +84,7 @@ export default function IssueContextMenu({
   const updateIssue = useUpdateIssue(project.project.ref);
   const { archive, dialog: archiveDialog } = useArchiveAction(project, onDeleted);
   const restoreIssue = useRestoreIssue(project.project.ref);
-  const actionsQuery = useActionsQuery(project.project.ref);
+  const actionsQuery = useActionsQuery(shell ? project.project.ref : null);
   const priorityLabel = usePriorityLabel();
   const presetLabel = useDueDatePresetLabel();
   const [open, setOpen] = useState(false);
@@ -113,9 +114,9 @@ export default function IssueContextMenu({
     patch({ labelIds: next });
   }
 
-  async function copyText(value: string) {
+  async function copyText(value: string | Promise<string>) {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       toast.success(tCommon('copied'));
     } catch {
       toast.error(t('copyFailed'));
@@ -321,6 +322,7 @@ export default function IssueContextMenu({
                           weekday: 'short',
                           month: 'short',
                           day: 'numeric',
+                          calendar: 'gregory',
                         })}
                       </ContextMenuShortcut>
                     </ContextMenuItem>

@@ -139,6 +139,13 @@ export const AGENT_ACTIONS: ToolMeta[] = [
     always: false,
   },
   {
+    key: 'create_checklist_items',
+    group: 'issues',
+    label: 'Add checklist items in bulk',
+    description: 'Append up to 100 items to a checklist in one operation.',
+    always: false,
+  },
+  {
     key: 'update_checklist_item',
     group: 'issues',
     label: 'Update checklist items',
@@ -236,6 +243,19 @@ export const AGENT_ACTIONS: ToolMeta[] = [
     description: 'Permanently delete shared project documents.',
     always: false,
   },
+  // A new thread is anchored to text the agent cannot select, so its copy only replies.
+  {
+    key: 'add_document_comment',
+    group: 'documents',
+    label: 'Comment on documents',
+    description: 'Reply in the comment threads of documents as this agent.',
+    always: false,
+    overrides: {
+      hide: ['quote', 'from', 'to', 'version'],
+      description:
+        'Reply in a comment thread of a document. `parentId` is the id of the first comment of the thread.',
+    },
+  },
   {
     key: 'list_note_boards',
     group: 'notes',
@@ -329,7 +349,8 @@ export const ALWAYS_ON_ACTIONS: ToolMeta[] = [
     key: 'list_issues',
     group: 'issues',
     label: 'List issues by filters',
-    description: 'List issues filtered by state, type, assignee, priority, label, or due date.',
+    description:
+      'List issues filtered by state, type, assignee, priority, label, due date, when they were created or updated, or blocked.',
     always: true,
   },
   {
@@ -347,10 +368,29 @@ export const ALWAYS_ON_ACTIONS: ToolMeta[] = [
     always: true,
   },
   {
+    key: 'get_project_activity',
+    group: 'project',
+    label: 'Read project activity',
+    description: 'Read the comments and changes across all issues of the project, by period.',
+    overrides: {
+      description:
+        'Read project comments and changes by period, with cursor pagination. Text values are previews of at most 1000 UTF-16 code units; truncatedFields names shortened values and their original lengths. Read list_issue_activity for full historical entries, or get_issue for the current description.',
+    },
+    always: true,
+  },
+  {
     key: 'list_attachments',
     group: 'issues',
     label: 'List attachments',
     description: 'View the file attachment metadata on an issue.',
+    always: true,
+  },
+  {
+    key: 'view_attachment',
+    group: 'issues',
+    label: 'View attachments',
+    description:
+      'Open an attachment of an issue or an initiative: an image, a PDF, a text file or a spreadsheet.',
     always: true,
   },
   {

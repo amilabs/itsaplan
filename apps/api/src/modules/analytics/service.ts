@@ -13,8 +13,9 @@ import {
   initiative,
   type ActivityPayload,
 } from '@repo/db';
-import { and, desc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, isNotNull, lt, sql } from 'drizzle-orm';
 import { HttpError, iso } from '#shared/lib';
+import type { AgentRunTrigger } from '#modules/agents/model';
 
 // Read-only project metrics for the dashboards feature. Every figure is derived
 // from the existing issue / project_column / issue_activity / issue_status tables —
@@ -546,6 +547,8 @@ export async function listActivity(
     actorUserId?: string | null;
     action?: string | null;
     issueIds?: number[] | null;
+    from?: Date;
+    to?: Date;
   } = {},
 ): Promise<ActivityPage> {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
@@ -557,6 +560,8 @@ export async function listActivity(
   if (opts.issueIds) conds.push(inArray(issueActivity.issueId, opts.issueIds));
   if (opts.actorUserId != null) conds.push(eq(issueActivity.actorUserId, opts.actorUserId));
   if (opts.action) conds.push(eq(issueActivity.action, opts.action));
+  if (opts.from) conds.push(gte(issueActivity.createdAt, opts.from));
+  if (opts.to) conds.push(lt(issueActivity.createdAt, opts.to));
   if (before)
     conds.push(
       sql`(${issueActivity.createdAt}, ${issueActivity.id}) < (${before.ts}::timestamptz, ${before.id}::integer)`,
@@ -611,7 +616,7 @@ export async function listActivity(
 export interface AgentRunFeedItem {
   id: number;
   status: string;
-  trigger: 'mention' | 'delegation' | 'field' | 'schedule' | 'manual';
+  trigger: AgentRunTrigger;
   agentId: number;
   agentName: string;
   issueId: number | null;

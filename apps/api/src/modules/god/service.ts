@@ -2,6 +2,9 @@ import {
   db,
   user,
   session,
+  oauthAccessToken,
+  oauthRefreshToken,
+  teamInvite,
   account,
   agentSkill,
   agentTool,
@@ -16,9 +19,7 @@ import {
   teamMember,
   teamRole,
   projectView,
-  scimGroup,
-  scimGroupMapping,
-  scimGroupMember,
+  workspaceManager,
 } from '@repo/db';
 import {
   and,
@@ -35,9 +36,9 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
-import { HttpError, iso } from '#shared/lib';
+import { accountsManagedByScim } from '@repo/auth';
+import { iso } from '#shared/lib';
 import { deleteAccount } from '#shared/account-deletion';
-import { mappedProjectIds, reconcileProjects } from '#modules/scim/reconcile';
 import {
   defaultMemberPermissions,
   fullPermissions,
@@ -45,13 +46,16 @@ import {
   type Permissions,
 } from '#shared/permissions';
 import { listAllMembers, listMemberContexts } from '#modules/members/service';
-import { listRoles } from '#modules/roles/service';
 import type { TeamStanding } from '#modules/teams/service';
 
 // Data access for the instance directories (god mode): every account and every
 // project on this instance. It reads across the better-auth tables (user, session,
 // account) and across projects the caller is not a member of, which no
 // project-scoped store may do — every function here is behind the god guard.
+
+// The instance owner keeps god mode; an agent's account follows its agent; with SCIM the
+// identity provider decides.
+export type ActiveLock = 'owner' | 'agent' | 'scim';
 
 export interface InstanceUserRow {
   id: string;
@@ -67,7 +71,13 @@ export interface InstanceUserRow {
   // The sign-in methods linked to the account ("credential", "google", …).
   providers: string[];
   projectCount: number;
-  // The start of the most recent session, or null when the user never signed in.
+  // False when the account is deactivated (user.active), by god or the instance's SCIM
+  // provider: it cannot open a session until it is reactivated.
+  active: boolean;
+  // Why god cannot switch `active` here, or null when it can.
+  activeLock: ActiveLock | null;
+  // When the person last used the app, to the hour; null when they have not used it since
+  // the column was added.
   lastSeenAt: string | null;
   createdAt: string;
 }
@@ -84,8 +94,12 @@ export interface InstanceUserProject {
   // member, the default member matrix when no role is assigned.
   permissions: Permissions;
   // How many owners the project has. 1 on a project this user owns means deleting
-  // the account would leave the project with nobody who can manage it.
+  // the account would leave the project with nobody who can manage it, unless it is in a
+  // workspace of theirs.
   ownerCount: number;
+  // Whether the project's team is in a workspace this user owns. That workspace passes to
+  // the instance owner with the account, and with it what the user owned alone there.
+  inOwnWorkspace: boolean;
   joinedAt: string;
 }
 
@@ -109,7 +123,6 @@ interface UserFacts {
   agents: Set<string>;
   providers: Map<string, string[]>;
   projectCounts: Map<string, number>;
-  lastSeen: Map<string, Date>;
 }
 
 async function loadUserFacts(userIds: string[]): Promise<UserFacts> {
@@ -118,10 +131,9 @@ async function loadUserFacts(userIds: string[]): Promise<UserFacts> {
       agents: new Set(),
       providers: new Map(),
       projectCounts: new Map(),
-      lastSeen: new Map(),
     };
   }
-  const [agentRows, accountRows, memberRows, sessionRows] = await Promise.all([
+  const [agentRows, accountRows, memberRows] = await Promise.all([
     db.select({ userId: aiAgent.userId }).from(aiAgent).where(inArray(aiAgent.userId, userIds)),
     db
       .select({ userId: account.userId, providerId: account.providerId })
@@ -132,12 +144,6 @@ async function loadUserFacts(userIds: string[]): Promise<UserFacts> {
       .from(projectMember)
       .where(inArray(projectMember.userId, userIds))
       .groupBy(projectMember.userId),
-    // Session start times, reduced to the latest per user below. Aggregating in
-    // SQL would return the max as a driver-formatted string, not a Date.
-    db
-      .select({ userId: session.userId, createdAt: session.createdAt })
-      .from(session)
-      .where(inArray(session.userId, userIds)),
   ]);
 
   const providers = new Map<string, string[]>();
@@ -147,32 +153,35 @@ async function loadUserFacts(userIds: string[]): Promise<UserFacts> {
     providers.set(r.userId, list);
   }
 
-  const lastSeen = new Map<string, Date>();
-  for (const r of sessionRows) {
-    const current = lastSeen.get(r.userId);
-    if (!current || r.createdAt > current) lastSeen.set(r.userId, r.createdAt);
-  }
-
   return {
     agents: new Set(agentRows.map((r) => r.userId)),
     providers,
     projectCounts: new Map(memberRows.map((r) => [r.userId, r.count])),
-    lastSeen,
   };
 }
 
-function toRow(r: UserRow, facts: UserFacts): InstanceUserRow {
-  const lastSeen = facts.lastSeen.get(r.id) ?? null;
+function activeLockOf(role: string, isAgent: boolean, scim: boolean): ActiveLock | null {
+  if (role === 'god') return 'owner';
+  if (isAgent) return 'agent';
+  return scim ? 'scim' : null;
+}
+
+function toRow(r: UserRow, facts: UserFacts, scim: boolean): InstanceUserRow {
+  const lastSeen = r.lastSeenAt ?? null;
+  const role = r.role ?? 'user';
+  const isAgent = facts.agents.has(r.id);
   return {
     id: r.id,
     name: r.name,
     email: r.email,
     image: r.image,
     emailVerified: r.emailVerified,
-    role: r.role ?? 'user',
-    isAgent: facts.agents.has(r.id),
+    role,
+    isAgent,
     providers: facts.providers.get(r.id) ?? [],
     projectCount: facts.projectCounts.get(r.id) ?? 0,
+    active: r.active !== false,
+    activeLock: activeLockOf(role, isAgent, scim),
     lastSeenAt: lastSeen ? iso(lastSeen) : null,
     createdAt: iso(r.createdAt),
   };
@@ -227,7 +236,8 @@ export async function listInstanceUsers(options: {
   ]);
 
   const facts = await loadUserFacts(rows.map((r) => r.id));
-  return { items: rows.map((r) => toRow(r, facts)), total: totals[0]?.count ?? 0 };
+  const scim = await accountsManagedByScim();
+  return { items: rows.map((r) => toRow(r, facts, scim)), total: totals[0]?.count ?? 0 };
 }
 
 // One account with the projects it can reach. Returns null for an unknown id.
@@ -236,13 +246,14 @@ export async function getInstanceUser(userId: string): Promise<InstanceUserDetai
   const row = rows[0];
   if (!row) return null;
 
-  const [facts, memberships] = await Promise.all([
+  const [facts, memberships, ownedWorkspaces] = await Promise.all([
     loadUserFacts([row.id]),
     db
       .select({
         projectId: project.id,
         projectKey: project.key,
         projectName: project.name,
+        workspaceId: team.workspaceId,
         role: projectMember.role,
         roleId: projectMember.roleId,
         roleName: teamRole.name,
@@ -251,10 +262,16 @@ export async function getInstanceUser(userId: string): Promise<InstanceUserDetai
       })
       .from(projectMember)
       .innerJoin(project, eq(project.id, projectMember.projectId))
+      .innerJoin(team, eq(team.id, project.teamId))
       .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
       .where(eq(projectMember.userId, userId))
       .orderBy(project.name),
+    db
+      .select({ id: workspaceManager.workspaceId })
+      .from(workspaceManager)
+      .where(and(eq(workspaceManager.userId, userId), eq(workspaceManager.role, 'owner'))),
   ]);
+  const owned = new Set(ownedWorkspaces.map((w) => w.id));
 
   const ownerCounts = await countOwnersByProject(memberships.map((m) => m.projectId));
 
@@ -268,12 +285,13 @@ export async function getInstanceUser(userId: string): Promise<InstanceUserDetai
       roleId: m.roleId,
       roleName: m.roleName,
       ownerCount: ownerCounts.get(m.projectId) ?? 0,
+      inOwnWorkspace: owned.has(m.workspaceId),
       permissions: resolvePermissions(role, m.permissions),
       joinedAt: iso(m.joinedAt),
     };
   });
 
-  return { ...toRow(row, facts), projects };
+  return { ...toRow(row, facts, await accountsManagedByScim()), projects };
 }
 
 // How many owners each of the given projects has, keyed by project id.
@@ -293,6 +311,29 @@ async function countOwnersByProject(projectIds: number[]): Promise<Map<number, n
 // delete.
 export async function deleteInstanceUser(userId: string): Promise<void> {
   await deleteAccount(userId);
+}
+
+// Deactivates or reactivates an account without deleting it, through the same user.active
+// a SCIM provider writes: the auth session hook and the request guard refuse it, API keys
+// included, which therefore stay and work again once it is reactivated. Its sessions, MCP
+// OAuth tokens and pending invites are dropped. Returns the updated user, or null if gone.
+export async function setInstanceUserActive(
+  userId: string,
+  active: boolean,
+): Promise<InstanceUserDetail | null> {
+  if (!(await getInstanceUser(userId))) return null;
+  // Marked first, so a sign-in that lands while the revocation runs is refused a session.
+  await db.update(user).set({ active }).where(eq(user.id, userId));
+  if (!active) {
+    await db.delete(session).where(eq(session.userId, userId));
+    await db.delete(oauthRefreshToken).where(eq(oauthRefreshToken.userId, userId));
+    await db.delete(oauthAccessToken).where(eq(oauthAccessToken.userId, userId));
+    // Their pending invites would otherwise keep the registration gate open.
+    await db
+      .delete(teamInvite)
+      .where(and(eq(teamInvite.invitedByUserId, userId), eq(teamInvite.status, 'pending')));
+  }
+  return getInstanceUser(userId);
 }
 
 // ── Project directory ────────────────────────────────────────────────────────
@@ -345,9 +386,6 @@ export interface InstanceProjectMember {
 
 export interface InstanceProjectDetail extends InstanceProjectRow {
   members: InstanceProjectMember[];
-  // The custom roles a member of this project can be put on. Read by the SCIM group
-  // mapping form, which names one when a group grants membership.
-  roles: { id: number; name: string; isDefault: boolean }[];
 }
 
 export interface InstanceProjectPage {
@@ -494,9 +532,10 @@ export async function listInstanceProjects(options: {
   offset: number;
 }): Promise<InstanceProjectPage> {
   const term = options.search?.trim();
-  const where = term
-    ? or(ilike(project.key, `%${term}%`), ilike(project.name, `%${term}%`))
-    : undefined;
+  const where = and(
+    eq(project.isTemplate, false),
+    term ? or(ilike(project.key, `%${term}%`), ilike(project.name, `%${term}%`)) : undefined,
+  );
 
   const [rows, totals] = await Promise.all([
     db
@@ -517,17 +556,6 @@ export async function listInstanceProjects(options: {
   return { items, total: totals[0]?.count ?? 0 };
 }
 
-// Every project on the instance as a picker entry, by key. What the SCIM group
-// mapping form fills its project select from.
-export async function listInstanceProjectOptions(): Promise<
-  { id: number; key: string; name: string }[]
-> {
-  return db
-    .select({ id: project.id, key: project.key, name: project.name })
-    .from(project)
-    .orderBy(project.key);
-}
-
 // One project with its members and the access each membership resolves to. Returns
 // null for an unknown id.
 export async function getInstanceProject(projectId: number): Promise<InstanceProjectDetail | null> {
@@ -535,11 +563,10 @@ export async function getInstanceProject(projectId: number): Promise<InstancePro
   const row = rows[0];
   if (!row) return null;
 
-  const [facts, memberships, contexts, roles] = await Promise.all([
+  const [facts, memberships, contexts] = await Promise.all([
     loadProjectFacts([row.id]),
     listAllMembers(projectId),
     listMemberContexts(projectId),
-    listRoles(row.teamId),
   ]);
 
   const members: InstanceProjectMember[] = memberships.flatMap((m) => {
@@ -565,11 +592,7 @@ export async function getInstanceProject(projectId: number): Promise<InstancePro
   });
   members.sort((a, b) => a.name.localeCompare(b.name));
 
-  return {
-    ...toProjectRow(row, facts(row.id)),
-    members,
-    roles: roles.map((r) => ({ id: r.id, name: r.name, isDefault: r.isDefault })),
-  };
+  return { ...toProjectRow(row, facts(row.id)), members };
 }
 
 // ── Team directory ───────────────────────────────────────────────────────────
@@ -649,7 +672,7 @@ async function loadTeamCounts(teamIds: number[]): Promise<(id: number) => Instan
 
   const [members, projects, issues, agents, skills, tools, roles] = await Promise.all([
     countByOwner(teamMember, teamMember.teamId, teamIds),
-    countByOwner(project, project.teamId, teamIds),
+    countByOwner(project, project.teamId, teamIds, eq(project.isTemplate, false)),
     // Issues have no team column; they reach one through their project.
     db
       .select({ teamId: project.teamId, count: sql<number>`count(*)::int` })
@@ -734,6 +757,7 @@ export async function listInstanceTeamProjects(
   const term = options.search?.trim();
   const where = and(
     eq(project.teamId, teamId),
+    eq(project.isTemplate, false),
     term ? or(ilike(project.key, `%${term}%`), ilike(project.name, `%${term}%`)) : undefined,
   );
 
@@ -829,127 +853,4 @@ export async function verifyInstanceUserEmail(userId: string): Promise<InstanceU
     .returning({ id: user.id });
   if (updated.length === 0) return null;
   return getInstanceUser(userId);
-}
-
-// ── Provisioned groups ───────────────────────────────────────────────────────
-
-// A group an identity provider pushed over SCIM, with what it grants. The group
-// and its members belong to the provider and are read-only here; the mappings are
-// the instance owner's, and are what turns group membership into project access.
-export interface InstanceScimGroupMapping {
-  projectId: number;
-  projectKey: string;
-  projectName: string;
-  role: 'owner' | 'member';
-  roleId: number | null;
-}
-
-export interface InstanceScimGroup {
-  id: string;
-  displayName: string;
-  externalId: string | null;
-  memberCount: number;
-  mappings: InstanceScimGroupMapping[];
-}
-
-export async function listScimGroups(): Promise<InstanceScimGroup[]> {
-  const [groups, counts, mappings] = await Promise.all([
-    db.select().from(scimGroup).orderBy(scimGroup.displayName),
-    db
-      .select({ groupId: scimGroupMember.groupId, count: sql<number>`count(*)::int` })
-      .from(scimGroupMember)
-      .groupBy(scimGroupMember.groupId),
-    db
-      .select({
-        groupId: scimGroupMapping.groupId,
-        projectId: scimGroupMapping.projectId,
-        projectKey: project.key,
-        projectName: project.name,
-        role: scimGroupMapping.role,
-        roleId: scimGroupMapping.roleId,
-      })
-      .from(scimGroupMapping)
-      .innerJoin(project, eq(project.id, scimGroupMapping.projectId))
-      .orderBy(project.name),
-  ]);
-
-  const countByGroup = new Map(counts.map((row) => [row.groupId, row.count]));
-  return groups.map((group) => ({
-    id: group.id,
-    displayName: group.displayName,
-    externalId: group.externalId,
-    memberCount: countByGroup.get(group.id) ?? 0,
-    mappings: mappings
-      .filter((m) => m.groupId === group.id)
-      .map((m) => ({
-        projectId: m.projectId,
-        projectKey: m.projectKey,
-        projectName: m.projectName,
-        role: m.role === 'owner' ? ('owner' as const) : ('member' as const),
-        roleId: m.roleId,
-      })),
-  }));
-}
-
-// Replaces what a group grants, then reconciles every project the change touched —
-// the ones it granted before as well as the ones it grants now, so a project it was
-// unmapped from loses the memberships that came from it.
-export async function setScimGroupMappings(
-  groupId: string,
-  mappings: { projectId: number; role: 'owner' | 'member'; roleId: number | null }[],
-): Promise<InstanceScimGroup> {
-  const found = await db
-    .select({ id: scimGroup.id })
-    .from(scimGroup)
-    .where(eq(scimGroup.id, groupId));
-  if (!found[0]) throw new HttpError(404, 'Group not found');
-
-  const projectIds = mappings.map((m) => m.projectId);
-  if (new Set(projectIds).size !== projectIds.length) {
-    throw new HttpError(400, 'A group can be mapped to a project only once');
-  }
-  if (projectIds.length > 0) {
-    const known = await db
-      .select({ id: project.id, teamId: project.teamId })
-      .from(project)
-      .where(inArray(project.id, projectIds));
-    if (known.length !== new Set(projectIds).size) throw new HttpError(400, 'Unknown project');
-    // A role belongs to one team, so a mapping that names another team's role would
-    // silently grant the wrong permissions.
-    const roleIds = mappings.map((m) => m.roleId).filter((id): id is number => id !== null);
-    if (roleIds.length > 0) {
-      const roles = await db
-        .select({ id: teamRole.id, teamId: teamRole.teamId })
-        .from(teamRole)
-        .where(inArray(teamRole.id, roleIds));
-      for (const mapping of mappings) {
-        if (mapping.roleId === null) continue;
-        const role = roles.find((r) => r.id === mapping.roleId);
-        const teamId = known.find((p) => p.id === mapping.projectId)?.teamId;
-        if (!role || role.teamId !== teamId) {
-          throw new HttpError(400, 'The role does not belong to that project');
-        }
-      }
-    }
-  }
-
-  const before = await mappedProjectIds(groupId);
-  await db.transaction(async (tx) => {
-    await tx.delete(scimGroupMapping).where(eq(scimGroupMapping.groupId, groupId));
-    if (mappings.length > 0) {
-      await tx.insert(scimGroupMapping).values(
-        mappings.map((m) => ({
-          groupId,
-          projectId: m.projectId,
-          role: m.role,
-          // Owners bypass the permission matrix, so they carry no custom role.
-          roleId: m.role === 'owner' ? null : m.roleId,
-        })),
-      );
-    }
-  });
-  await reconcileProjects([...before, ...projectIds]);
-
-  const groups = await listScimGroups();
-  return groups.find((g) => g.id === groupId)!;
 }

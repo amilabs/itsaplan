@@ -8,6 +8,8 @@ import {
   label,
   customField,
   customFieldOption,
+  issueTemplate,
+  issueTemplateLabel,
   projectView,
   projectDashboard,
   projectDocument,
@@ -20,7 +22,9 @@ import { and, eq, inArray, or } from 'drizzle-orm';
 import { HttpError } from '#shared/lib';
 import {
   DEFAULT_COLUMNS,
+  defaultAgentMembers,
   getProjectById,
+  joinTeamAsCreator,
   mapProject,
   targetTeam,
   type ProjectRow,
@@ -30,6 +34,7 @@ import { getProjectDefaults } from '#modules/settings/service';
 import { listAgents, updateAgent } from '#modules/agents/core/service';
 import { listAllAgentSchedules, createAgentSchedule } from '#modules/agents/schedules/service';
 import { nextCronRun } from '#modules/agents/schedules/cron';
+import { checkScheduleOptions } from '#modules/agents/schedules/extension';
 import { generateSecret } from '#modules/webhooks/service';
 import {
   assertAttachmentStorageCapacity,
@@ -39,12 +44,13 @@ import {
   deleteAttachmentObject,
 } from '#modules/attachments/storage';
 import { assertValidDocumentContentJson, replaceAssetReferences } from '#modules/documents/service';
+import { copySections } from './copy-extension';
 
 // Which parts of a source project the copy carries over. A key set false skips that
-// entity. Some sections depend on others (a view's filters reference
-// states/types/labels/fields); those dependencies are force-enabled in
-// normalizeInclude so a partial selection can never leave an id pointing at the
-// source project. Agents, their skills and their configured tools are not among them:
+// entity, and a section an extension adds (copy-extension.ts) has a key of its own.
+// Some sections depend on others (a view's filters reference states/types/labels/fields);
+// those dependencies are force-enabled in normalizeInclude so a partial selection can
+// never leave an id pointing at the source project. Agents, their skills and their configured tools are not among them:
 // all three belong to the team, so a copy inside it reuses the same agents, and a copy
 // into another team carries none.
 export interface CopyProjectInclude {
@@ -52,6 +58,7 @@ export interface CopyProjectInclude {
   issueTypes: boolean;
   labels: boolean;
   customFields: boolean;
+  issueTemplates: boolean;
   views: boolean;
   dashboards: boolean;
   documents: boolean;
@@ -67,6 +74,7 @@ export const COPY_INCLUDE_KEYS: (keyof CopyProjectInclude)[] = [
   'issueTypes',
   'labels',
   'customFields',
+  'issueTemplates',
   'views',
   'dashboards',
   'documents',
@@ -75,6 +83,22 @@ export const COPY_INCLUDE_KEYS: (keyof CopyProjectInclude)[] = [
   'webhooks',
   'agents',
   'schedules',
+];
+
+type Include = CopyProjectInclude & Record<string, boolean>;
+
+// The core's keys and those of the sections an extension added.
+export function copyIncludeKeys(): string[] {
+  return [...COPY_INCLUDE_KEYS, ...copySections().map((section) => section.key)];
+}
+
+// What a project template never carries: the agents and their schedules work in a
+// project, a webhook delivers one project's events, and docs are its content.
+const NOT_IN_TEMPLATE: (keyof CopyProjectInclude)[] = [
+  'agents',
+  'schedules',
+  'webhooks',
+  'documents',
 ];
 
 const ALL_FALSE = Object.fromEntries(
@@ -89,6 +113,7 @@ const DEFAULT_INCLUDE: CopyProjectInclude = {
   issueTypes: true,
   labels: true,
   customFields: true,
+  issueTemplates: true,
   views: true,
   dashboards: true,
   documents: true,
@@ -96,10 +121,20 @@ const DEFAULT_INCLUDE: CopyProjectInclude = {
 };
 
 // Resolves the selection and force-enables the dependencies each entity needs to be
-// copied correctly. Views/actions remap the ids of states, types, labels and fields,
-// so those must be copied too; a schedule cannot exist without its agent.
-function normalizeInclude(raw?: Partial<CopyProjectInclude>): CopyProjectInclude {
-  const inc: CopyProjectInclude = raw ? { ...ALL_FALSE, ...raw } : { ...DEFAULT_INCLUDE };
+// copied correctly. Views, actions and issue templates remap the ids of states, types,
+// labels and fields, so those must be copied too; a schedule cannot exist without its
+// agent, and a status schedule without its state. A template leaves out what it never
+// carries.
+function normalizeInclude(
+  raw: Record<string, boolean | undefined> | undefined,
+  template: boolean,
+): Include {
+  const inc: Include = raw ? { ...ALL_FALSE, ...raw } : { ...DEFAULT_INCLUDE };
+  for (const section of copySections()) {
+    if (template && !section.template) inc[section.key] = false;
+    if (inc[section.key]) for (const key of section.requires) inc[key] = true;
+  }
+  if (template) for (const key of NOT_IN_TEMPLATE) inc[key] = false;
   if (inc.customFields) inc.issueTypes = true;
   if (inc.views) {
     inc.states = true;
@@ -107,18 +142,21 @@ function normalizeInclude(raw?: Partial<CopyProjectInclude>): CopyProjectInclude
     inc.labels = true;
     inc.customFields = true;
   }
-  if (inc.actions) {
+  if (inc.actions || inc.issueTemplates) {
     inc.states = true;
     inc.issueTypes = true;
     inc.labels = true;
   }
-  if (inc.schedules) inc.agents = true;
+  if (inc.schedules) {
+    inc.agents = true;
+    inc.states = true;
+  }
   return inc;
 }
 
 // Old id → new id maps built while copying, used to rewrite the id references that
 // views and actions hold in their filters.
-interface CopyIdMaps {
+export interface CopyIdMaps {
   column: Map<number, number>;
   labelGroup: Map<number, number>;
   label: Map<number, number>;
@@ -144,7 +182,7 @@ function remapId(map: Map<number, number>, v: unknown): unknown {
 // Non-numeric values (priority/statusType strings, assignee user ids, dates,
 // custom-field text) are left as-is. Values whose id is absent from the map are kept
 // unchanged.
-function remapViewFilters(filters: unknown, maps: CopyIdMaps): unknown {
+export function remapViewFilters(filters: unknown, maps: CopyIdMaps): unknown {
   if (!filters || typeof filters !== 'object') return filters;
   const conditions = (filters as { conditions?: unknown }).conditions;
   if (!Array.isArray(conditions)) return filters;
@@ -216,6 +254,9 @@ function remapActionEffect(effect: unknown, maps: CopyIdMaps): unknown {
 
 // Creates a new project that copies the selected parts of the source project's
 // configuration, but none of its issues. The creator becomes the new project's owner.
+// With `template` the copy is a project template instead: it has no members, and it
+// leaves out what a template never carries. With `defaultAgents` the copy starts with the
+// team's default agents, as a created project does.
 //
 // Pure-database entities (states, types, labels, custom fields, views, dashboards,
 // documents, actions, settings, webhooks) are copied in one transaction, recording
@@ -227,10 +268,11 @@ export async function copyProject(
   sourceProjectId: number,
   input: { key: string; name: string; description?: string },
   ownerId: string,
-  rawInclude?: Partial<CopyProjectInclude>,
-  teamId?: number,
+  teamId: number,
+  rawInclude?: Record<string, boolean | undefined>,
+  { template = false, defaultAgents = false }: { template?: boolean; defaultAgents?: boolean } = {},
 ): Promise<ProjectRow> {
-  const inc = normalizeInclude(rawInclude);
+  const inc = normalizeInclude(rawInclude, template);
 
   const maps: CopyIdMaps = {
     column: new Map(),
@@ -249,6 +291,7 @@ export async function copyProject(
   // What a new project starts with, set instance-wide in god mode. Read before the
   // transaction opens so the settings lookup is not part of it.
   const defaults = await getProjectDefaults();
+  const agentMembers = defaultAgents ? await defaultAgentMembers(ownerTeam) : [];
   // Agents, integration credentials and roles belong to the team, so what references
   // them survives the copy only when it stays in the same team.
   const sameTeam = ownerTeam.id === source.teamId;
@@ -282,6 +325,7 @@ export async function copyProject(
         name: input.name,
         description: input.description ?? '',
         mcpEnabled: defaults.mcpEnabled,
+        isTemplate: template,
         ...sourceFeatures,
       })
       .returning();
@@ -290,8 +334,17 @@ export async function copyProject(
       teamName: ownerTeam.name,
       teamSlug: ownerTeam.slug,
       teamMcpEnabled: ownerTeam.mcpEnabled,
+      workspaceId: ownerTeam.workspaceId,
     });
-    await tx.insert(projectMember).values({ projectId: proj.id, userId: ownerId, role: 'owner' });
+    if (!template) {
+      await joinTeamAsCreator(tx, ownerTeam.id, ownerId);
+      await tx.insert(projectMember).values({ projectId: proj.id, userId: ownerId, role: 'owner' });
+    }
+    if (agentMembers.length > 0) {
+      await tx
+        .insert(projectMember)
+        .values(agentMembers.map((member) => ({ projectId: proj.id, ...member })));
+    }
 
     // States (columns). When copied, every source column is carried over so views,
     // actions and issues have somewhere to map to. When not copied, the project is
@@ -384,13 +437,13 @@ export async function copyProject(
       }
     }
 
-    // Type-scoped custom fields (with their options). Project-wide fields
-    // (issue_type_id NULL) are not copied.
-    if (inc.customFields && maps.type.size > 0) {
+    // Custom fields with their options. Every issue type is copied with them, so a
+    // type-scoped field keeps its type.
+    if (inc.customFields) {
       const fieldRows = await tx
         .select()
         .from(customField)
-        .where(inArray(customField.issueTypeId, Array.from(maps.type.keys())))
+        .where(eq(customField.projectId, sourceProjectId))
         .orderBy(customField.position);
       for (const f of fieldRows) {
         const [created] = await tx
@@ -401,6 +454,7 @@ export async function copyProject(
             name: f.name,
             fieldType: f.fieldType,
             memberScope: f.memberScope,
+            showInBody: f.showInBody,
             position: f.position,
           })
           .returning({ id: customField.id });
@@ -421,12 +475,48 @@ export async function copyProject(
       }
     }
 
+    // Issue templates: their type, state and labels point at the copies. The assignee is
+    // left unset, as a column's auto-assignee is.
+    if (inc.issueTemplates) {
+      const templateRows = await tx
+        .select()
+        .from(issueTemplate)
+        .where(eq(issueTemplate.projectId, sourceProjectId))
+        .orderBy(issueTemplate.id);
+      for (const tpl of templateRows) {
+        const [created] = await tx
+          .insert(issueTemplate)
+          .values({
+            projectId: proj.id,
+            name: tpl.name,
+            description: tpl.description,
+            titleTemplate: tpl.titleTemplate,
+            descriptionTemplate: tpl.descriptionTemplate,
+            typeId: tpl.typeId != null ? (maps.type.get(tpl.typeId) ?? null) : null,
+            columnId: tpl.columnId != null ? (maps.column.get(tpl.columnId) ?? null) : null,
+            priority: tpl.priority,
+          })
+          .returning({ id: issueTemplate.id });
+        const labelRows = await tx
+          .select({ labelId: issueTemplateLabel.labelId })
+          .from(issueTemplateLabel)
+          .where(eq(issueTemplateLabel.templateId, tpl.id));
+        const labelIds = labelRows.flatMap((row) => maps.label.get(row.labelId) ?? []);
+        if (labelIds.length > 0) {
+          await tx
+            .insert(issueTemplateLabel)
+            .values(labelIds.map((labelId) => ({ templateId: created.id, labelId })));
+        }
+      }
+    }
+
     // Views: their filters reference the ids captured above.
     if (inc.views) {
       const viewRows = await tx
         .select()
         .from(projectView)
-        .where(eq(projectView.projectId, sourceProjectId))
+        // A private view is its owner's alone and stays behind.
+        .where(and(eq(projectView.projectId, sourceProjectId), eq(projectView.isPrivate, false)))
         .orderBy(projectView.position, projectView.id);
       for (const v of viewRows) {
         await tx.insert(projectView).values({
@@ -626,6 +716,19 @@ export async function copyProject(
       }
     }
 
+    for (const section of copySections()) {
+      if (!inc[section.key]) continue;
+      await section.copy({
+        tx,
+        sourceProjectId,
+        projectId: proj.id,
+        ownerId,
+        maps,
+        template,
+        sameTeam,
+      });
+    }
+
     return proj;
   });
   let newProject: ProjectRow;
@@ -665,7 +768,8 @@ export async function copyProject(
 
   // Schedules: re-created against the same agents, which only work in the copy when it
   // stayed in the team. next_run_at is recomputed from the cron so the copy starts on
-  // its own cadence rather than inheriting a past due time.
+  // its own cadence rather than inheriting a past due time. The options go through the
+  // extension with the id maps, for the ids they hold.
   if (inc.schedules && sameTeam) {
     for (const s of await listAllAgentSchedules(sourceProjectId, ownerId)) {
       await createAgentSchedule({
@@ -673,10 +777,19 @@ export async function copyProject(
         agentId: s.agentId,
         actorUserId: ownerId,
         name: s.name,
+        type: s.type,
         prompt: s.prompt,
         cron: s.cron,
+        nextRunAt: s.cron === null ? null : nextCronRun(s.cron),
+        columnId: s.columnId === null ? null : maps.column.get(s.columnId)!,
+        delaySec: s.delaySec,
+        options: await checkScheduleOptions({
+          type: s.type,
+          options: s.options,
+          projectId: newProject.id,
+          copy: maps,
+        }),
         status: s.status,
-        nextRunAt: nextCronRun(s.cron),
       });
     }
   }

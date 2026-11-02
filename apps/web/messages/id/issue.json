@@ -108,7 +108,8 @@
     "restore": "Pulihkan issue",
     "archive": "Arsipkan issue",
     "delete": "Hapus issue",
-    "shareIssue": "Bagikan issue"
+    "shareIssue": "Bagikan issue",
+    "move": "Pindahkan ke proyek lain"
   },
   "actions": {
     "deleteTitle": "Hapus issue",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "Tindakan ini tidak dapat dibatalkan.",
     "deleteDescription": "Hapus {issue}? Tindakan ini akan menghapus issue, komentar, aktivitas, dan lampirannya.",
     "archiveDescription": "Arsipkan {issue}? Issue ini akan meninggalkan papan dan dapat dipulihkan nanti.",
-    "applyDescription": "Terapkan <v>{action}</v> pada issue ini?"
+    "applyDescription": "Terapkan <v>{action}</v> pada issue ini?",
+    "moveTitle": "Pindahkan isu",
+    "move": "Pindahkan",
+    "moveDescription": "Pindahkan {issue} ke proyek lain di tim ini. Isu mendapat nomor baru di sana, dan tautan lama tetap membukanya.",
+    "moveSubtasks": "{count, plural, other {# subtugasnya ikut dipindahkan.}}",
+    "moveProject": "Proyek",
+    "moveChooseProject": "Pilih proyek",
+    "moveColumn": "Status",
+    "moveColumnMatching": "Status yang sesuai",
+    "moveCarriedOver": "Tipe, label, dan bidang kustom dipertahankan jika proyek tujuan memiliki yang bernama sama. Siklus, inisiatif, dan tautan ke isu di proyek ini dihapus."
   },
   "create": {
     "title": "Issue baru",
@@ -237,6 +247,8 @@
     "toSend": "untuk mengirim",
     "unknownAuthor": "Tidak diketahui",
     "goToLastComment": "Buka komentar terakhir",
+    "copyLink": "Salin tautan",
+    "linkCopied": "Tautan disalin",
     "edit": "Ubah",
     "edited": "diedit",
     "deleteComment": "Hapus komentar",
@@ -257,7 +269,9 @@
     "no": "Tidak",
     "time": "Waktu",
     "startTime": "Waktu mulai",
-    "endTime": "Waktu selesai"
+    "endTime": "Waktu selesai",
+    "pickOption": "Pilih opsi…",
+    "noOption": "Tanpa opsi"
   },
   "editor": {
     "descriptionPlaceholder": "Tambah deskripsi…"
@@ -341,7 +355,8 @@
     "worklogChanged": "mengubah catatan <v>{from}</v> pada <v>{fromDate}</v> menjadi <v>{to}</v> pada <v>{date}</v>",
     "worklogRemoved": "menghapus catatan <v>{time}</v> pada <v>{date}</v>",
     "commentEdited": "mengedit komentar",
-    "commentDeleted": "menghapus komentar"
+    "commentDeleted": "menghapus komentar",
+    "issueMoved": "memindahkan isu ini dari <v>{from}</v> ke <v>{to}</v>"
   },
   "development": {
     "title": "Pengembangan",
@@ -463,5 +478,91 @@
     "noAssignee": "Tanpa penerima tugas",
     "noType": "Tanpa tipe",
     "noLabels": "Tidak ada"
+  },
+  "agentRuns": {
+    "title": "Eksekusi agen",
+    "refresh": "Refresh",
+    "loading": "Loading runs…",
+    "loadError": "Could not load run history. Try refreshing.",
+    "empty": "No agent runs for this issue.",
+    "loadMore": "Load older runs",
+    "pending": "Pending",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "attempts": "Attempts: {count}",
+    "started": "First started: {date}",
+    "finished": "Finished: {date}",
+    "pendingHint": "This run is waiting or executing. Refresh to read its latest state.",
+    "task": "Task",
+    "error": "Last error",
+    "result": "Result",
+    "input": "Input",
+    "trace": "Latest recorded attempt",
+    "noTrace": "No execution steps have been recorded yet. Steps may appear after the trace is saved.",
+    "externalHint": "No execution transcript was recorded. Use a runner version that reports run events.",
+    "attributes": "Attributes",
+    "recordedAttempt": "Recorded attempt",
+    "latestAttempt": "Latest attempt",
+    "previousAttempt": "Previous attempt",
+    "attemptStarted": "Attempt started: {date}",
+    "duration": "{milliseconds, number} ms",
+    "triggers": {
+      "mention": "Mention",
+      "delegation": "Delegation",
+      "field": "Member field",
+      "schedule": "Schedule",
+      "manual": "Manual",
+      "status": "Status change",
+      "event": "Event"
+    },
+    "queued": "Waiting",
+    "running": "Running",
+    "queuedHint": "Waiting for a runner, a retry or its scheduled start.",
+    "queueTitle": "Eksekusi agen",
+    "internalInFlight": "Agen internal workspace: {running} dari {limit} berjalan",
+    "internalInFlightNoLimit": "Agen internal workspace: {running} berjalan",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "In progress",
+    "historySection": "History",
+    "waitingForRunner": "Waiting for runner",
+    "offlineHint": "Waiting runs start when the runner connects.",
+    "retryAt": "Retry at {time}",
+    "startsAt": "Starts at {time}",
+    "inDuration": "in {duration}",
+    "afterAttempts": "after {count, plural, one {# attempt} other {# attempts}}",
+    "startedAgo": "started {time}",
+    "stepsSection": "What the agent did",
+    "outputTail": "The output is long: the runner sent only its end.",
+    "openWorkItem": "Open work item",
+    "scheduleRun": "Schedule: {name}",
+    "facts": {
+      "agent": "Agent",
+      "trigger": "Trigger",
+      "started": "Started",
+      "finished": "Finished",
+      "attempts": "Attempts",
+      "runner": "Runner",
+      "delivery": "Delivery",
+      "context": "Context",
+      "run": "Run"
+    },
+    "connection": {
+      "push": "Invocation URL",
+      "online": "Online",
+      "offline": "Offline",
+      "never": "Not connected"
+    },
+    "presence": {
+      "offline": "Runner offline",
+      "never": "Runner not connected"
+    },
+    "externalAttempt": "Recorded attempt {attempt}",
+    "openCodex": "Open in Codex",
+    "sessionHint": "Opens the local Codex app. The session must be available on this computer or its connected host.",
+    "traceTruncated": "The recording limit was reached. Later events are omitted; the final run result is still available.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "This run is not in your queue, or you cannot read it.",
+    "backToRuns": "Back to runs"
   }
 }

@@ -1,20 +1,20 @@
 'use client';
 
+import { useWorkspaceScimQuery } from '@/services/workspaces.service';
 import ListSkeleton from '@/components/common/skeleton/ListSkeleton';
-import GodScimSettings from './components/scim/GodScimSettings';
+import WorkspaceScimSettings from '@/features/teams/components/workspace/scim/WorkspaceScimSettings';
 import GodSectionPage from './components/GodSectionPage';
-import { useInstanceScimSettingsQuery } from './services/god.service';
 
-// SCIM provisioning: the token an identity provider authenticates with, and what the
-// groups it pushes grant. Nothing here is a form the owner fills in and saves — the
-// switch and the token act on their own — so there is no page-level Save.
+// The instance's SCIM provisioning: it reaches past every workspace to the whole
+// instance, so only the instance owner sets it up (the API holds the same rule). The
+// switch and the token act on their own, so there is no page-level Save.
 export default function GodScimPage() {
-  const settings = useInstanceScimSettingsQuery();
+  const settings = useWorkspaceScimQuery(null).data;
 
   return (
     <GodSectionPage slug="scim">
-      {settings.data ? (
-        <GodScimSettings settings={settings.data} />
+      {settings ? (
+        <WorkspaceScimSettings workspaceId={null} settings={settings} />
       ) : (
         <ListSkeleton rows={5} rowClassName="h-12" />
       )}

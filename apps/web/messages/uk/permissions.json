@@ -17,6 +17,7 @@
     "integrations": "Інтеграції",
     "agent_skills": "Навички агентів",
     "agent_tools": "Інструменти агентів",
+    "agent_usage": "Витрати агентів",
     "custom_fields": "Власні поля",
     "issue_templates": "Шаблони задач",
     "workflow_config": "Налаштування робочого процесу",
@@ -48,5 +49,16 @@
   "allowed": "дозволено",
   "notAllowed": "не дозволено",
   "accessHeading": "Доступ до цього проєкту",
-  "joined": "приєднався {date}"
+  "joined": "приєднався {date}",
+  "editor": {
+    "titleEdit": "Редагувати роль",
+    "titleNew": "Нова роль",
+    "namePlaceholder": "напр. Contributor",
+    "toggleActionAll": "Перемкнути «{action}» для всіх ресурсів",
+    "toggleGroupAll": "Перемкнути всі права групи {group}",
+    "toggleActionGroup": "Перемкнути «{action}» для {group}",
+    "cellAria": "{resource}: {action}",
+    "saveRole": "Зберегти роль",
+    "createRole": "Створити роль"
+  }
 }

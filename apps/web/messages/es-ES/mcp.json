@@ -24,18 +24,21 @@
     "methodTabsAria": "Método de conexión",
     "method": "OAuth",
     "personalKey": "Clave de API",
-    "description": "Úsalo para cualquier cliente MCP que soporte OAuth, como ChatGPT o Claude. Inicias sesión con tu cuenta de Itsaplan. El cliente nunca recibe una clave de API.",
+    "description": "Úsalo para cualquier cliente MCP que soporte OAuth, como ChatGPT o Claude. Inicias sesión con tu cuenta de {app}. El cliente nunca recibe una clave de API.",
     "discovery": "Descubrimiento de OAuth",
     "steps": {
       "add": "Añade una aplicación MCP en tu cliente.",
       "paste": "Pega el endpoint de MCP.",
       "choose": "Elige OAuth cuando el cliente pregunte cómo iniciar sesión.",
-      "signIn": "Inicia sesión en Itsaplan y aprueba el acceso."
+      "signIn": "Inicia sesión en {app} y aprueba el acceso."
     },
-    "security": "OAuth usa PKCE (S256), registración dinámica de clientes y tokens de acceso acotados a tu cuenta de Itsaplan.",
+    "security": "OAuth usa PKCE (S256), registración dinámica de clientes y tokens de acceso acotados a tu cuenta de {app}.",
     "consent": {
-      "title": "Autorizar Itsaplan",
-      "description": "Permite que este cliente MCP actúe con los permisos de tu cuenta de Itsaplan.",
+      "title": "{client} quiere conectarse a tu cuenta",
+      "titleUnnamed": "Un cliente MCP quiere conectarse a tu cuenta",
+      "description": "Actuará con tus permisos: todo lo que tú puedes ver y cambiar, podrá hacerlo también.",
+      "account": "Has iniciado sesión como {email}",
+      "redirect": "Después de responder, vuelves a {host}.",
       "missingCode": "A esta petición de autorización le falta su código de consentimiento.",
       "cancel": "Cancelar",
       "pending": "Autorizando…",

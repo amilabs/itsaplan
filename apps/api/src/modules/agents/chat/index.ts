@@ -6,7 +6,7 @@ import { requireUser } from '#shared/access';
 import { noContent, sseFrame, sseResponse } from '#shared/http';
 import { HttpError } from '#shared/lib';
 import { commonErrors, errors } from '#shared/responses';
-import { getAgentInProject, isTriggerableBy } from '../core/service';
+import { assertChatEnabled, getAgentInProject, isTriggerableBy } from '../core/service';
 import { runnerAuth } from '../runner-auth';
 import {
   ChatAckResponse,
@@ -67,6 +67,7 @@ export const agentChatRoutes = new Elysia({ name: 'agent-chat', detail: { tags: 
     async ({ params, project, body, user }) => {
       const caller = requireUser(user);
       const agent = await requireExternalAgent(params.agentId, project.id);
+      assertChatEnabled(agent);
       if (!isTriggerableBy(agent, caller.id)) {
         throw new HttpError(403, 'This agent only takes tasks from its owner');
       }
@@ -88,7 +89,8 @@ export const agentChatRoutes = new Elysia({ name: 'agent-chat', detail: { tags: 
         summary: 'Send a chat message',
         description:
           "Queue a message for an external agent's runner and return the answer it will " +
-          'produce. Follow the answer with the stream endpoint.',
+          'produce. Follow the answer with the stream endpoint. An agent with chat turned ' +
+          'off returns 403.',
       },
     },
   )
@@ -173,13 +175,14 @@ export const agentChatRoutes = new Elysia({ name: 'agent-chat', detail: { tags: 
 
   .post('/agent-chats/claim', async ({ agent }) => ({ message: await claimNextMessage(agent) }), {
     runnerAgent: true,
-    response: { 200: ClaimChatResponse, ...errors(401, 403) },
+    response: { 200: ClaimChatResponse, ...errors(401, 403, 409) },
     detail: {
       summary: 'Claim the next chat message',
       description:
         "Take the calling agent's next chat message to answer. The call waits for one " +
         'and returns message: null when none arrives. It is leased: report events, ' +
-        'heartbeats, or a result, otherwise it is handed out again.',
+        'heartbeats, or a result, otherwise it is handed out again. 409 for an agent ' +
+        'with an invocation URL, whose messages are sent to that URL.',
     },
   })
 

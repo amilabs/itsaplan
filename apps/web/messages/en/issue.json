@@ -108,7 +108,8 @@
     "restore": "Restore issue",
     "archive": "Archive issue",
     "delete": "Delete issue",
-    "shareIssue": "Share issue"
+    "shareIssue": "Share issue",
+    "move": "Move to another project"
   },
   "actions": {
     "deleteTitle": "Delete issue",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "This cannot be undone.",
     "deleteDescription": "Delete {issue}? This removes the issue, its comments, activity and attachments.",
     "archiveDescription": "Archive {issue}? It leaves the board and can be restored later.",
-    "applyDescription": "Apply <v>{action}</v> to this issue?"
+    "applyDescription": "Apply <v>{action}</v> to this issue?",
+    "moveTitle": "Move issue",
+    "move": "Move",
+    "moveDescription": "Move {issue} to another project of this team. It gets a new number there, and the old link opens it.",
+    "moveSubtasks": "{count, plural, one {Its subtask moves with it.} other {Its # subtasks move with it.}}",
+    "moveProject": "Project",
+    "moveChooseProject": "Choose a project",
+    "moveColumn": "Status",
+    "moveColumnMatching": "Matching status",
+    "moveCarriedOver": "Type, labels and custom fields are kept where the target project has one of the same name. Cycle, initiative and links to issues in this project are removed."
   },
   "create": {
     "title": "New issue",
@@ -237,6 +247,8 @@
     "toSend": "to send",
     "unknownAuthor": "Unknown",
     "goToLastComment": "Go to the last comment",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
     "edit": "Edit",
     "edited": "edited",
     "deleteComment": "Delete comment",
@@ -257,7 +269,9 @@
     "no": "No",
     "time": "Time",
     "startTime": "Start time",
-    "endTime": "End time"
+    "endTime": "End time",
+    "pickOption": "Pick an option…",
+    "noOption": "No option"
   },
   "editor": {
     "descriptionPlaceholder": "Add description…"
@@ -341,7 +355,8 @@
     "worklogChanged": "changed the logged <v>{from}</v> on <v>{fromDate}</v> to <v>{to}</v> on <v>{date}</v>",
     "worklogRemoved": "removed the <v>{time}</v> logged on <v>{date}</v>",
     "commentEdited": "edited a comment",
-    "commentDeleted": "deleted a comment"
+    "commentDeleted": "deleted a comment",
+    "issueMoved": "moved this issue from <v>{from}</v> to <v>{to}</v>"
   },
   "development": {
     "title": "Development",
@@ -463,5 +478,91 @@
     "noAssignee": "No assignee",
     "noType": "No type",
     "noLabels": "None"
+  },
+  "agentRuns": {
+    "title": "Agent runs",
+    "refresh": "Refresh",
+    "loading": "Loading runs…",
+    "loadError": "Could not load run history. Try refreshing.",
+    "empty": "No agent runs for this issue.",
+    "loadMore": "Load older runs",
+    "pending": "Pending",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "attempts": "Attempts: {count}",
+    "started": "First started: {date}",
+    "finished": "Finished: {date}",
+    "pendingHint": "This run is waiting or executing. Refresh to read its latest state.",
+    "task": "Task",
+    "error": "Last error",
+    "result": "Result",
+    "input": "Input",
+    "trace": "Latest recorded attempt",
+    "noTrace": "No execution steps have been recorded yet. Steps may appear after the trace is saved.",
+    "externalHint": "No execution transcript was recorded. Use a runner version that reports run events.",
+    "attributes": "Attributes",
+    "recordedAttempt": "Recorded attempt",
+    "latestAttempt": "Latest attempt",
+    "previousAttempt": "Previous attempt",
+    "attemptStarted": "Attempt started: {date}",
+    "duration": "{milliseconds, number} ms",
+    "triggers": {
+      "mention": "Mention",
+      "delegation": "Delegation",
+      "field": "Member field",
+      "schedule": "Schedule",
+      "manual": "Manual",
+      "status": "Status change",
+      "event": "Event"
+    },
+    "queued": "Waiting",
+    "running": "Running",
+    "queuedHint": "Waiting for a runner, a retry or its scheduled start.",
+    "queueTitle": "Agent runs",
+    "internalInFlight": "Workspace internal agents: {running} of {limit} running",
+    "internalInFlightNoLimit": "Workspace internal agents: {running} running",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "In progress",
+    "historySection": "History",
+    "waitingForRunner": "Waiting for runner",
+    "offlineHint": "Waiting runs start when the runner connects.",
+    "retryAt": "Retry at {time}",
+    "startsAt": "Starts at {time}",
+    "inDuration": "in {duration}",
+    "afterAttempts": "after {count, plural, one {# attempt} other {# attempts}}",
+    "startedAgo": "started {time}",
+    "stepsSection": "What the agent did",
+    "outputTail": "The output is long: the runner sent only its end.",
+    "openWorkItem": "Open work item",
+    "scheduleRun": "Schedule: {name}",
+    "facts": {
+      "agent": "Agent",
+      "trigger": "Trigger",
+      "started": "Started",
+      "finished": "Finished",
+      "attempts": "Attempts",
+      "runner": "Runner",
+      "delivery": "Delivery",
+      "context": "Context",
+      "run": "Run"
+    },
+    "connection": {
+      "push": "Invocation URL",
+      "online": "Online",
+      "offline": "Offline",
+      "never": "Not connected"
+    },
+    "presence": {
+      "offline": "Runner offline",
+      "never": "Runner not connected"
+    },
+    "externalAttempt": "Recorded attempt {attempt}",
+    "openCodex": "Open in Codex",
+    "sessionHint": "Opens the local Codex app. The session must be available on this computer or its connected host.",
+    "traceTruncated": "The recording limit was reached. Later events are omitted; the final run result is still available.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "This run is not in your queue, or you cannot read it.",
+    "backToRuns": "Back to runs"
   }
 }

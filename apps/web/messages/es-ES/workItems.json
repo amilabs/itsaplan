@@ -67,8 +67,13 @@
       "custom": "Todo el mundo tiene fecha."
     }
   },
+  "empty": {
+    "title": "No hay tickets",
+    "description": "Los tickets aparecerán aquí.",
+    "filteredTitle": "Ningún ticket coincide",
+    "filteredDescription": "Cambia los filtros para ver más."
+  },
   "timeline": {
-    "empty": "Todavía no hay tickets para situar en la cronología.",
     "expandGroup": "Expandir grupo",
     "collapseGroup": "Contraír grupo",
     "inferredStart": "Inicio inferido de la fecha de creación",
@@ -85,7 +90,7 @@
     "labels": "Etiquetas",
     "noAssignee": "Sin asignar",
     "noDelegate": "Sin delegado",
-    "noInitiative": "Sin iniciitiva",
+    "noInitiative": "Sin iniciativa",
     "noCycle": "Sin ciclo",
     "archive": "Archivar",
     "clearSelection": "Limpiar la selección"
@@ -112,7 +117,7 @@
     "noDelegate": "Sin delegado",
     "noPriority": "Sin prioridad",
     "noType": "Sin tipo",
-    "noInitiative": "Sin iniciitiva",
+    "noInitiative": "Sin iniciativa",
     "noCycle": "Sin ciclo",
     "noMember": "Sin valor"
   }

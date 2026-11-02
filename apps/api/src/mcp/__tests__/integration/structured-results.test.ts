@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CallToolResultSchema, type CallToolRequest } from '@modelcontextprotocol/sdk/types.js';
 import { auth } from '@repo/auth';
-import { app, authedApi } from '#tests/helpers/app';
+import { app, authedApi, ownWorkspaceId, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { buildMcpServer } from '../../server';
@@ -77,10 +77,48 @@ describe('MCP structured results through the SDK client', () => {
     expect(deleted.structuredContent).toEqual({ ok: true, status: 204, data: null });
   });
 
+  it('creates a checklist batch through the SDK and returns a validated array result', async () => {
+    const owner = await signUpTestUser();
+    const api = authedApi(owner.cookie);
+    await createProject(api, { key: 'MKT', name: 'Marketing' });
+    const view = await api.projects({ projectKey: 'MKT' }).get();
+    const issue = await api.projects({ projectKey: 'MKT' }).issues.post({
+      columnId: view.data!.columns[0].id,
+      title: 'Release',
+    });
+    const checklist = await api
+      .issues({ issueId: issue.data!.id })
+      .checklists.post({ title: 'Steps' });
+    const client = await connect(owner.userId);
+    const listed = await client.listTools();
+    const tool = listed.tools.find((entry) => entry.name === 'create_checklist_items');
+    expect(tool?.inputSchema.properties?.items).toMatchObject({
+      type: 'array',
+      minItems: 1,
+      maxItems: 100,
+    });
+    const items = [{ content: 'Tag release' }, { content: 'Publish notes' }];
+    const result = await callTool(client, {
+      name: 'create_checklist_items',
+      arguments: { checklistId: checklist.data!.id, items },
+    });
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toMatchObject({ ok: true, status: 201, data: items });
+    const invalid = await callTool(client, {
+      name: 'create_checklist_items',
+      arguments: { checklistId: checklist.data!.id, items: [] },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.structuredContent).toMatchObject({ ok: false, status: 400 });
+    const read = await api.issues({ issueId: issue.data!.id }).get();
+    expect(read.data!.checklists[0].items).toMatchObject(items);
+    expect(read.data!.checklists[0].items).toHaveLength(2);
+  });
+
   it('validates structured validation, conflict, and permission errors without changing their text', async () => {
     const owner = await signUpTestUser();
     const api = authedApi(owner.cookie);
-    await api.projects.post({ key: 'PRIVATE', name: 'Private project' });
+    await createProject(api, { key: 'PRIVATE', name: 'Private project' });
     const client = await connect(owner.userId);
     await client.listTools();
     for (const [args, status] of [
@@ -119,7 +157,11 @@ describe('MCP structured results through the SDK client', () => {
 
   it('returns the same error envelope for missing team arguments and unknown tools', async () => {
     const user = await signUpTestUser();
-    await authedApi(user.cookie).teams.post({ name: 'Another team', slug: 'another-team' });
+    await authedApi(user.cookie).teams.post({
+      name: 'Another team',
+      slug: 'another-team',
+      workspaceId: await ownWorkspaceId(authedApi(user.cookie)),
+    });
     const client = await connect(user.userId);
     await client.listTools();
     const missing = await callTool(client, { name: 'list_ai_agents' });

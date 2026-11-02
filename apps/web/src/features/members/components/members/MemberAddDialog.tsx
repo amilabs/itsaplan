@@ -21,19 +21,19 @@ import {
 } from '@/services/members.service';
 import { useTeamRoleOptionsQuery } from '@/services/roles.service';
 import MemberPicker, { type MemberOption } from './MemberPicker';
+import { OWNER_VALUE, chosenRole, ownerOffered } from '../../utils/addMemberRole';
 
 // The message for each refusal the API can answer with; any other error falls back
 // to 'refused'.
-type RefusalKey = 'alreadyMember' | 'alreadyInTeam' | 'alreadyInvited' | 'refused';
+type RefusalKey =
+  'alreadyMember' | 'alreadyInTeam' | 'alreadyInvited' | 'domainNotAllowed' | 'refused';
 
 const REFUSAL_KEY: Record<string, RefusalKey> = {
   ALREADY_PROJECT_MEMBER: 'alreadyMember',
   ALREADY_TEAM_MEMBER: 'alreadyInTeam',
   INVITE_ALREADY_PENDING: 'alreadyInvited',
+  EMAIL_DOMAIN_NOT_ALLOWED: 'domainNotAllowed',
 };
-
-// Owner is not a custom role, so it sits outside the roles list under this value.
-const OWNER_VALUE = 'owner';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -79,10 +79,11 @@ export default function MemberAddDialog({
 
   const candidates = candidatesQuery.data ?? [];
   const roles = rolesQuery.data ?? [];
-  // Default to the team's default role until another option is picked. Empty until
+  // Start on the default role until another option is picked. Empty until
   // the roles load, so a submit before that cannot fall back to Owner.
   const defaultRoleId = roles.find((r) => r.isDefault)?.id ?? roles[0]?.id;
-  const role = roleValue || (defaultRoleId != null ? String(defaultRoleId) : '');
+  const offerOwner = ownerOffered(canGrantOwner, target);
+  const role = chosenRole(roleValue, defaultRoleId, offerOwner);
 
   const typed = query.trim().toLowerCase();
   // An address nobody in the team carries is offered as an invite — unless the
@@ -165,7 +166,7 @@ export default function MemberAddDialog({
                     {r.name}
                   </SelectItem>
                 ))}
-                {canGrantOwner && <SelectItem value={OWNER_VALUE}>{tCommon('owner')}</SelectItem>}
+                {offerOwner && <SelectItem value={OWNER_VALUE}>{tCommon('owner')}</SelectItem>}
               </SelectContent>
             </Select>
           </div>

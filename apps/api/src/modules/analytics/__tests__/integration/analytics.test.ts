@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { authedApi, type Api } from '#tests/helpers/app';
+import { authedApi, type Api, createProject } from '#tests/helpers/app';
 import { signUpTestUser, type TestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { pulseRows } from '../../service';
@@ -17,7 +17,7 @@ import { createAgent } from '#tests/helpers/agents';
 async function setupProject() {
   const owner: TestUser = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  await createProject(asOwner, { key: 'MKT', name: 'Marketing' });
   const view = await asOwner.projects({ projectKey: 'MKT' }).get();
   const columns = view.data!.columns;
   const col: Record<string, number> = {};
@@ -603,6 +603,20 @@ describe('analytics', () => {
         .projects({ projectKey: 'MKT' })
         .analytics.activity.get({ query: { issueIds: 'abc' } });
       expect(none.data?.items).toHaveLength(0);
+    });
+
+    it('limits the feed to a period', async () => {
+      const { asOwner, col } = await setupProject();
+      await createIssue(asOwner, col.started);
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const future = new Date(Date.now() + 60_000).toISOString();
+      const feed = (query: { from?: string; to?: string }) =>
+        asOwner.projects({ projectKey: 'MKT' }).analytics.activity.get({ query });
+
+      expect((await feed({ from: past, to: future })).data?.items).toHaveLength(1);
+      expect((await feed({ from: future })).data?.items).toHaveLength(0);
+      expect((await feed({ to: past })).data?.items).toHaveLength(0);
+      expect((await feed({ from: 'yesterday' })).status).toBe(400);
     });
 
     it('clamps a limit below 1 up to a single item', async () => {

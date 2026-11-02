@@ -1,20 +1,22 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { apiKeyApi, authedApi, type Api } from '#tests/helpers/app';
+import { apiKeyApi, authedApi, type Api, createProject } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { createAgent } from '#tests/helpers/agents';
 import type { WebhookEventType } from '../../service';
+import { onProjectEvent, type ProjectEvent } from '../../emit';
 
 async function setupOwnerProject() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  const project = await createProject(asOwner, { key: 'MKT', name: 'Marketing' });
   // createProject seeds five default columns; the first is the target for issues.
   const view = await asOwner.projects({ projectKey: 'MKT' }).get();
   return {
     owner,
     asOwner,
     projectId: project.data!.id,
+    teamRef: project.data!.teamRef,
     columnId: view.data!.columns[0].id,
     columns: view.data!.columns,
   };
@@ -419,6 +421,27 @@ describe('webhooks', () => {
       });
     });
 
+    it('names the labels a label change added and removed', async () => {
+      const { asOwner, columnId } = await setupOwnerProject();
+      const id = await createWebhook(asOwner, ['issue.label_changed']);
+      const labels = asOwner.projects({ projectKey: 'MKT' }).labels;
+      const bug = (await labels.post({ name: 'bug' })).data!;
+      const ui = (await labels.post({ name: 'ui' })).data!;
+      const issue = (
+        await asOwner
+          .projects({ projectKey: 'MKT' })
+          .issues.post({ columnId, title: 'Task', labelIds: [bug.id] })
+      ).data!;
+
+      await asOwner.issues({ issueId: issue.id }).patch({ labelIds: [ui.id] });
+
+      const [payload] = await payloads(asOwner, id);
+      expect(payload.data).toMatchObject({
+        labels: [{ id: ui.id, name: 'ui' }],
+        labelChange: { added: [{ id: ui.id, name: 'ui' }], removed: [{ id: bug.id, name: 'bug' }] },
+      });
+    });
+
     it('marks an agent as the actor of what it does', async () => {
       const { asOwner, columnId } = await setupOwnerProject();
       const id = await createWebhook(asOwner, ['issue.created']);
@@ -463,19 +486,24 @@ describe('webhooks', () => {
     });
 
     it('names the issue a comment is on', async () => {
-      const { asOwner, columnId } = await setupOwnerProject();
+      const { asOwner, columnId, teamRef } = await setupOwnerProject();
       const id = await createWebhook(asOwner, ['comment.created']);
       const issue = (
         await asOwner.projects({ projectKey: 'MKT' }).issues.post({ columnId, title: 'Task' })
       ).data!;
 
-      await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'looks good' });
+      const comment = (
+        await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'looks good' })
+      ).data!;
 
       const [payload] = await payloads(asOwner, id);
+      const issueLink = `${process.env.APP_URL}/${teamRef}/issue/${issue.identifier}`;
+      expect(payload.data.url).toBe(`${issueLink}#comment-${comment.id}`);
       expect(payload.data.issue).toMatchObject({
         id: issue.id,
         identifier: issue.identifier,
         title: 'Task',
+        url: issueLink,
       });
     });
   });
@@ -536,6 +564,77 @@ describe('webhooks', () => {
         title: 'Task',
         state: { id: column.id, name: column.name },
       });
+    });
+  });
+
+  describe('listeners', () => {
+    it('hands an event to a listener with no webhook subscribed, and loads its payload once', async () => {
+      const { owner, asOwner, projectId, columnId } = await setupOwnerProject();
+      const events: ProjectEvent[] = [];
+      const payloads: unknown[][] = [];
+      const offFirst = onProjectEvent(async (event) => {
+        events.push(event);
+        payloads.push(await event.load());
+      });
+      const offSecond = onProjectEvent(async (event) => {
+        payloads.push(await event.load());
+      });
+      try {
+        const issue = await asOwner
+          .projects({ projectKey: 'MKT' })
+          .issues.post({ columnId, title: 'Task' });
+
+        expect(events.map((e) => [e.projectId, e.type, e.actor])).toEqual([
+          [projectId, 'issue.created', owner.userId],
+        ]);
+        expect(payloads[0]).toEqual([expect.objectContaining({ id: issue.data!.id })]);
+        expect(payloads[1]).toBe(payloads[0]);
+      } finally {
+        offFirst();
+        offSecond();
+      }
+    });
+
+    it('hands a listener the issues a deleted column removes, with no webhook subscribed', async () => {
+      const { asOwner, columns } = await setupOwnerProject();
+      const column = columns.find((c) => c.stateType !== 'backlog')!;
+      const issue = (
+        await asOwner
+          .projects({ projectKey: 'MKT' })
+          .issues.post({ columnId: column.id, title: 'Task' })
+      ).data!;
+      const deleted: unknown[] = [];
+      const off = onProjectEvent(async (event) => {
+        if (event.type === 'issue.deleted') deleted.push(...(await event.load()));
+      });
+      try {
+        await asOwner
+          .projects({ projectKey: 'MKT' })
+          .columns({ columnId: column.id })
+          .delete({ mode: 'delete' });
+
+        expect(deleted).toEqual([expect.objectContaining({ id: issue.id })]);
+      } finally {
+        off();
+      }
+    });
+
+    it('keeps the write and the webhooks when a listener throws', async () => {
+      const { asOwner, columnId } = await setupOwnerProject();
+      const webhookId = await createWebhook(asOwner, ['issue.created']);
+      const off = onProjectEvent(async () => {
+        throw new Error('listener down');
+      });
+      try {
+        const res = await asOwner
+          .projects({ projectKey: 'MKT' })
+          .issues.post({ columnId, title: 'Task' });
+
+        expect(res.status).toBe(201);
+        expect(await payloads(asOwner, webhookId)).toHaveLength(1);
+      } finally {
+        off();
+      }
     });
   });
 

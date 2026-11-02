@@ -1,11 +1,10 @@
 import { db, agentChatEvent, agentChatFavorite, agentChatMessage, agentChatThread } from '@repo/db';
 import { and, asc, desc, eq, gt, inArray, notExists, sql } from 'drizzle-orm';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { intEnv, iso } from '#shared/lib';
+import { intEnv, iso, likePattern } from '#shared/lib';
 import { deleteContextUsage, recordContextUsage, type ContextUsage } from '../chat-usage';
 import { deleteFavorite, FAVORITES_LIMIT } from '../chat-favorites';
 import {
-  likePattern,
   searchTerm,
   snippetOf,
   summarize,
@@ -17,7 +16,7 @@ import { attachmentPreamble, chartPreamble, projectsPreamble } from '../core/pro
 import { peoplePreamble, type Person } from '../core/prompt/run-context';
 import type { ChatMessagePage, ChatPart, ChatThreadPage } from '../model';
 import { newChatThreadId } from '../core/runtime/thread-ids';
-import { touchRunner, type RunnerAgent } from '../runner/service';
+import { assertRunnerDrained, touchRunner, type RunnerAgent } from '../runner/service';
 import type { AgUiEventBody, ChatMessageStatus } from './model';
 
 // Chat with an external agent. The answer is produced by a runner on the operator's
@@ -421,6 +420,7 @@ async function expireExhausted(agentId: number): Promise<void> {
 // when none turns up in time. Waiting instead of polling is what makes an answer start
 // the moment it is sent.
 export async function claimNextMessage(agent: RunnerAgent): Promise<ClaimedChat | null> {
+  assertRunnerDrained(agent);
   await touchRunner(agent.id);
   await expireExhausted(agent.id);
   const deadline = Date.now() + agentChatConfig.claimWaitMs();
@@ -432,37 +432,73 @@ export async function claimNextMessage(agent: RunnerAgent): Promise<ClaimedChat 
   }
 }
 
+// The agent's next due answer without waiting for one, for an agent whose answers are
+// sent to its invocation URL rather than claimed.
+export async function takeNextMessage(agent: RunnerAgent): Promise<ClaimedChat | null> {
+  await expireExhausted(agent.id);
+  return claimMessage(agent);
+}
+
 // Takes the agent's next due answer, or null when it has none. Claiming clears whatever
 // a previous attempt produced: the answer is generated again from the start, and the
 // browser would otherwise read the abandoned half twice.
 async function claimMessage(agent: RunnerAgent): Promise<ClaimedChat | null> {
-  const rows = await db.execute(sql`
-    UPDATE agent_chat_message m
-    SET attempts = m.attempts + 1,
-        status = 'streaming',
-        content = '',
-        started_at = coalesce(m.started_at, now()),
-        next_attempt_at = now() + make_interval(secs => ${agentChatConfig.leaseSeconds()})
-    WHERE m.id = (
-      SELECT id FROM agent_chat_message q
-      WHERE q.agent_id = ${agent.id}
-        AND q.role = 'assistant'
-        AND q.status IN ('pending', 'streaming')
-        AND q.next_attempt_at <= now()
-      ORDER BY q.next_attempt_at, q.id
-      FOR UPDATE SKIP LOCKED
+  const rows = await db.transaction(async (tx) => {
+    const threads = await tx.execute(sql`
+      WITH live_heads AS MATERIALIZED (
+        SELECT q.thread_id, min(q.id) AS id FROM agent_chat_message q
+        WHERE q.agent_id = ${agent.id}
+          AND q.role = 'assistant'
+          AND q.status IN ('pending', 'streaming')
+        GROUP BY q.thread_id
+      ), ready_heads AS MATERIALIZED (
+        SELECT h.thread_id FROM live_heads h
+        JOIN agent_chat_message head ON head.id = h.id
+        WHERE head.next_attempt_at <= now()
+          AND head.attempts < ${agentChatConfig.maxAttempts()}
+        ORDER BY head.next_attempt_at, head.id
+      )
+      SELECT t.id FROM ready_heads h
+      CROSS JOIN LATERAL (
+        SELECT t.id FROM agent_chat_thread t
+        WHERE t.id = h.thread_id AND t.agent_id = ${agent.id}
+        FOR UPDATE SKIP LOCKED
+      ) t
       LIMIT 1
-    )
-    RETURNING
-      m.id,
-      m.thread_id AS "threadId",
-      m.attempts,
-      (SELECT u.name FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
-         WHERE t.id = m.thread_id) AS "requesterName",
-      (SELECT u.username FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
-         WHERE t.id = m.thread_id) AS "requesterUsername",
-      (SELECT cli_session_id FROM agent_chat_thread t WHERE t.id = m.thread_id) AS "sessionId"
-  `);
+    `);
+    const thread = (threads as unknown as { id: string }[])[0];
+    if (!thread) return [];
+    // Re-read the first unfinished answer after taking the thread lock: a concurrent
+    // claim may have committed while the thread selection used an earlier snapshot.
+    return tx.execute(sql`
+      UPDATE agent_chat_message m
+      SET attempts = m.attempts + 1,
+          status = 'streaming',
+          content = '',
+          started_at = coalesce(m.started_at, now()),
+          next_attempt_at = now() + make_interval(secs => ${agentChatConfig.leaseSeconds()})
+      WHERE m.id = (
+        SELECT q.id FROM agent_chat_message q
+        WHERE q.thread_id = ${thread.id}
+          AND q.role = 'assistant'
+          AND q.status IN ('pending', 'streaming')
+        ORDER BY q.id
+        LIMIT 1
+      )
+        AND m.status IN ('pending', 'streaming')
+        AND m.next_attempt_at <= now()
+        AND m.attempts < ${agentChatConfig.maxAttempts()}
+      RETURNING
+        m.id,
+        m.thread_id AS "threadId",
+        m.attempts,
+        (SELECT u.name FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
+           WHERE t.id = m.thread_id) AS "requesterName",
+        (SELECT u.username FROM agent_chat_thread t JOIN "user" u ON u.id = t.user_id
+           WHERE t.id = m.thread_id) AS "requesterUsername",
+        (SELECT cli_session_id FROM agent_chat_thread t WHERE t.id = m.thread_id) AS "sessionId"
+    `);
+  });
   const row = (rows as unknown as ClaimedRow[])[0];
   if (!row) return null;
   await db.delete(agentChatEvent).where(eq(agentChatEvent.messageId, row.id));

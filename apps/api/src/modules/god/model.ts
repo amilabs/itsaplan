@@ -5,10 +5,23 @@ import { PermissionMatrixSchema } from '#shared/permissions';
 import { USER_KINDS } from './service';
 
 const encryption = t.UnionEnum(['none', 'ssl', 'tls']);
+const smtpAuth = t.UnionEnum(['password', 'microsoft365']);
+
+const EMAIL_DOMAIN_PATTERN = '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9-]{2,63}$';
+
+// Lowercase domains, compared with the part of an address after the "@".
+export const EmailDomains = t.Array(t.String({ pattern: EMAIL_DOMAIN_PATTERN }), {
+  maxItems: 100,
+  uniqueItems: true,
+});
 
 export const userParams = t.Object({ userId: t.String() });
 
 export const projectParams = t.Object({ projectId: t.Numeric() });
+
+export const scimGroupParams = t.Object({ groupId: t.String() });
+
+export const roleParams = t.Object({ roleId: t.Numeric() });
 
 export const listUsersQuery = t.Object({
   search: t.Optional(t.String()),
@@ -37,6 +50,10 @@ export const AuthSettingsResponse = t.Object({
   magicLink: t.Boolean(),
   emailPassword: t.Boolean(),
   trustProviderEmails: t.Boolean(),
+  personalWorkspaces: t.Boolean(),
+  inviteTtlDays: t.Integer(),
+  inviteSearch: t.Boolean(),
+  allowedEmailDomains: t.Array(t.String()),
   // The settings that depend on outbound email cannot be turned on without a mail
   // provider, and the UI explains why.
   hasEmailProvider: t.Boolean(),
@@ -46,11 +63,18 @@ export const AuthSettingsResponse = t.Object({
 });
 
 export const AuthSettingsBody = t.Object({
-  registration: t.Optional(t.UnionEnum([...REGISTRATION_MODES])),
+  // t.UnionEnum defaults to its first value, which would fill in the mode for a request
+  // that leaves it out and so reset it; the update is partial.
+  registration: t.Optional(t.UnionEnum([...REGISTRATION_MODES], { default: undefined })),
   requireEmailVerification: t.Optional(t.Boolean()),
   magicLink: t.Optional(t.Boolean()),
   emailPassword: t.Optional(t.Boolean()),
   trustProviderEmails: t.Optional(t.Boolean()),
+  personalWorkspaces: t.Optional(t.Boolean()),
+  // The cap keeps createdAt plus the lifetime inside the range a Date can hold.
+  inviteTtlDays: t.Optional(t.Integer({ minimum: 0, maximum: 3650 })),
+  inviteSearch: t.Optional(t.Boolean()),
+  allowedEmailDomains: t.Optional(EmailDomains),
 });
 
 export const EmailSettingsResponse = t.Object({
@@ -62,6 +86,8 @@ export const EmailSettingsResponse = t.Object({
     username: t.String(),
     hasPassword: t.Boolean(),
     timeout: t.Nullable(t.Number()),
+    auth: smtpAuth,
+    oauth: t.Object({ tenantId: t.String(), clientId: t.String(), hasClientSecret: t.Boolean() }),
   }),
   resend: t.Object({ enabled: t.Boolean(), hasApiKey: t.Boolean() }),
   from: t.String(),
@@ -80,6 +106,14 @@ export const EmailSettingsBody = t.Object({
       username: t.String(),
       password: t.Optional(t.String()),
       timeout: t.Nullable(t.Integer({ minimum: 1 })),
+      auth: t.Optional(smtpAuth),
+      oauth: t.Optional(
+        t.Object({
+          tenantId: t.String({ maxLength: 128 }),
+          clientId: t.String({ maxLength: 128 }),
+          clientSecret: t.Optional(t.String({ maxLength: 1024 })),
+        }),
+      ),
     }),
   ),
   resend: t.Optional(t.Object({ enabled: t.Boolean(), apiKey: t.Optional(t.String()) })),
@@ -127,49 +161,6 @@ export const OidcSettingsBody = t.Object({
   pkce: t.Optional(t.Boolean()),
 });
 
-export const ScimSettingsResponse = t.Object({
-  enabled: t.Boolean(),
-  hasToken: t.Boolean(),
-  tokenPrefix: t.String(),
-  // Where to point the identity provider. Derived from the API origin, like the
-  // OIDC redirect URI.
-  baseUrl: t.String(),
-});
-
-export const ScimSettingsBody = t.Object({
-  enabled: t.Optional(t.Boolean()),
-});
-
-// The generated token, returned once. It is not stored anywhere it can be read
-// back, so a lost token is replaced rather than recovered.
-export const ScimTokenResponse = t.Object({
-  token: t.String(),
-});
-
-const scimGroupMapping = t.Object({
-  projectId: t.Integer(),
-  role: t.UnionEnum(['owner', 'member']),
-  // Which project_role a member joins on. Null for an owner (owners bypass the
-  // permission matrix) or to fall back to the project's default role.
-  roleId: t.Nullable(t.Integer()),
-});
-
-export const ScimGroupResponse = t.Object({
-  id: t.String(),
-  displayName: t.String(),
-  externalId: t.Nullable(t.String()),
-  memberCount: t.Integer(),
-  mappings: t.Array(
-    t.Intersect([scimGroupMapping, t.Object({ projectKey: t.String(), projectName: t.String() })]),
-  ),
-});
-
-export const ScimGroupMappingsBody = t.Object({
-  mappings: t.Array(scimGroupMapping, { maxItems: 100 }),
-});
-
-export const scimGroupParams = t.Object({ groupId: t.String() });
-
 export const StorageSettingsBody = t.Object({
   maxAttachmentMb: t.Optional(t.Integer({ minimum: 1, maximum: 10240 })),
   maxAvatarMb: t.Optional(t.Integer({ minimum: 1, maximum: 1024 })),
@@ -200,6 +191,8 @@ const InstanceUserResponse = t.Object({
   isAgent: t.Boolean(),
   providers: t.Array(t.String()),
   projectCount: t.Number(),
+  active: t.Boolean(),
+  activeLock: t.Nullable(t.UnionEnum(['owner', 'agent', 'scim'])),
   lastSeenAt: t.Nullable(t.String()),
   createdAt: t.String(),
 });
@@ -217,6 +210,7 @@ export const InstanceUserDetailResponse = t.Composite([
         roleName: t.Nullable(t.String()),
         permissions: PermissionMatrixSchema,
         ownerCount: t.Number(),
+        inOwnWorkspace: t.Boolean(),
         joinedAt: t.String(),
       }),
     ),
@@ -264,15 +258,10 @@ export const InstanceProjectDetailResponse = t.Composite([
         joinedAt: t.String(),
       }),
     ),
-    roles: t.Array(t.Object({ id: t.Integer(), name: t.String(), isDefault: t.Boolean() })),
   }),
 ]);
 
 export const InstanceProjectPageResponse = pageResponse(InstanceProjectResponse);
-
-export const InstanceProjectOptionListResponse = t.Array(
-  t.Object({ id: t.Number(), key: t.String(), name: t.String() }),
-);
 
 export const teamParams = t.Object({ teamId: t.Numeric() });
 

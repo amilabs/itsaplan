@@ -108,7 +108,8 @@
     "restore": "Восстановить задачу",
     "archive": "Архивировать задачу",
     "delete": "Удалить задачу",
-    "shareIssue": "Поделиться задачей"
+    "shareIssue": "Поделиться задачей",
+    "move": "Перенести в другой проект"
   },
   "actions": {
     "deleteTitle": "Удалить задачу",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "Это действие нельзя отменить.",
     "deleteDescription": "Удалить {issue}? Вместе с ней будут удалены комментарии, активность и вложения.",
     "archiveDescription": "Архивировать {issue}? Она исчезнет с доски, её можно будет восстановить позже.",
-    "applyDescription": "Применить <v>{action}</v> к этой задаче?"
+    "applyDescription": "Применить <v>{action}</v> к этой задаче?",
+    "moveTitle": "Перенести задачу",
+    "move": "Перенести",
+    "moveDescription": "Перенести {issue} в другой проект этой команды. Там задача получит новый номер, а старая ссылка продолжит её открывать.",
+    "moveSubtasks": "{count, plural, one {# подзадача переносится вместе с ней.} few {# подзадачи переносятся вместе с ней.} many {# подзадач переносятся вместе с ней.} other {# подзадачи переносятся вместе с ней.}}",
+    "moveProject": "Проект",
+    "moveChooseProject": "Выберите проект",
+    "moveColumn": "Статус",
+    "moveColumnMatching": "Соответствующий статус",
+    "moveCarriedOver": "Тип, метки и пользовательские поля сохраняются, если в целевом проекте есть такие же по названию. Цикл, инициатива и связи с задачами этого проекта удаляются."
   },
   "create": {
     "title": "Новая задача",
@@ -237,6 +247,8 @@
     "toSend": "чтобы отправить",
     "unknownAuthor": "Неизвестный",
     "goToLastComment": "Перейти к последнему комментарию",
+    "copyLink": "Копировать ссылку",
+    "linkCopied": "Ссылка скопирована",
     "edit": "Редактировать",
     "edited": "изменено",
     "deleteComment": "Удалить комментарий",
@@ -257,7 +269,9 @@
     "no": "Нет",
     "time": "Время",
     "startTime": "Начало",
-    "endTime": "Окончание"
+    "endTime": "Окончание",
+    "pickOption": "Выберите вариант…",
+    "noOption": "Не выбрано"
   },
   "editor": {
     "descriptionPlaceholder": "Добавьте описание…"
@@ -341,7 +355,8 @@
     "worklogChanged": "изменил(а) запись <v>{from}</v> за <v>{fromDate}</v> на <v>{to}</v> за <v>{date}</v>",
     "worklogRemoved": "удалил(а) запись <v>{time}</v> за <v>{date}</v>",
     "commentEdited": "изменил комментарий",
-    "commentDeleted": "удалил комментарий"
+    "commentDeleted": "удалил комментарий",
+    "issueMoved": "перенёс задачу из <v>{from}</v> в <v>{to}</v>"
   },
   "development": {
     "title": "Разработка",
@@ -463,5 +478,91 @@
     "noAssignee": "Без исполнителя",
     "noType": "Без типа",
     "noLabels": "Нет"
+  },
+  "agentRuns": {
+    "title": "Запуски агентов",
+    "refresh": "Обновить",
+    "loading": "Загружаем запуски…",
+    "loadError": "Не удалось загрузить историю. Попробуйте обновить.",
+    "empty": "У этой задачи пока нет запусков агентов.",
+    "loadMore": "Загрузить предыдущие запуски",
+    "pending": "В ожидании или работе",
+    "success": "Завершён",
+    "failed": "Ошибка",
+    "canceled": "Отменён",
+    "attempts": "Попытки: {count}",
+    "started": "Первый запуск: {date}",
+    "finished": "Завершён: {date}",
+    "pendingHint": "Запуск ожидает выполнения или выполняется. Обновите, чтобы увидеть актуальное состояние.",
+    "task": "Задание",
+    "error": "Последняя ошибка",
+    "result": "Результат",
+    "input": "Входные данные",
+    "trace": "Последняя записанная попытка",
+    "noTrace": "Шаги выполнения ещё не записаны. Они могут появиться после сохранения трассировки.",
+    "externalHint": "История выполнения не записана. Нужна версия runner с поддержкой событий запуска.",
+    "attributes": "Атрибуты",
+    "recordedAttempt": "Записанная попытка",
+    "latestAttempt": "Последняя попытка",
+    "previousAttempt": "Предыдущая попытка",
+    "attemptStarted": "Начало попытки: {date}",
+    "duration": "{milliseconds, number} мс",
+    "triggers": {
+      "mention": "Упоминание",
+      "delegation": "Делегирование",
+      "field": "Поле участника",
+      "schedule": "Расписание",
+      "manual": "Вручную",
+      "status": "Смена статуса",
+      "event": "Событие"
+    },
+    "queued": "Ожидает",
+    "running": "Выполняется",
+    "queuedHint": "Ожидает runner, повторной попытки или запланированного времени.",
+    "queueTitle": "Запуски агентов",
+    "internalInFlight": "Внутренние агенты воркспейса: в работе {running} из {limit}",
+    "internalInFlightNoLimit": "Внутренние агенты воркспейса: в работе {running}",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "В работе",
+    "historySection": "История",
+    "waitingForRunner": "Ждёт runner",
+    "offlineHint": "Ожидающие запуски начнутся, когда runner подключится.",
+    "retryAt": "Повтор в {time}",
+    "startsAt": "Старт в {time}",
+    "inDuration": "за {duration}",
+    "afterAttempts": "после {count, plural, one {# попытки} few {# попыток} many {# попыток} other {# попытки}}",
+    "startedAgo": "начат {time}",
+    "stepsSection": "Что делал агент",
+    "outputTail": "Вывод длинный: runner прислал только его конец.",
+    "openWorkItem": "Открыть задачу",
+    "scheduleRun": "Расписание: {name}",
+    "facts": {
+      "agent": "Агент",
+      "trigger": "Триггер",
+      "started": "Начат",
+      "finished": "Завершён",
+      "attempts": "Попытки",
+      "runner": "Runner",
+      "delivery": "Доставка",
+      "context": "Контекст",
+      "run": "Запуск"
+    },
+    "connection": {
+      "push": "URL вызова",
+      "online": "Онлайн",
+      "offline": "Офлайн",
+      "never": "Не подключён"
+    },
+    "presence": {
+      "offline": "Runner офлайн",
+      "never": "Runner не подключён"
+    },
+    "externalAttempt": "Попытка {attempt}",
+    "openCodex": "Открыть в Codex",
+    "sessionHint": "Открывает локальное приложение Codex. Сессия должна быть доступна на этом компьютере или подключённом хосте.",
+    "traceTruncated": "Достигнут лимит записи. Последующие события пропущены; итоговый результат запуска остаётся доступен.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "Этого запуска нет в очереди или к нему нет доступа.",
+    "backToRuns": "Back to runs"
   }
 }

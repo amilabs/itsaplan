@@ -17,6 +17,7 @@
     "integrations": "Integrations",
     "agent_skills": "Agent skills",
     "agent_tools": "Agent tools",
+    "agent_usage": "Agent usage",
     "custom_fields": "Custom fields",
     "issue_templates": "Issue templates",
     "workflow_config": "Workflow configuration",
@@ -48,5 +49,16 @@
   "allowed": "allowed",
   "notAllowed": "not allowed",
   "accessHeading": "Access to this project",
-  "joined": "joined {date}"
+  "joined": "joined {date}",
+  "editor": {
+    "titleEdit": "Edit role",
+    "titleNew": "New role",
+    "namePlaceholder": "e.g. Contributor",
+    "toggleActionAll": "Toggle {action} for all resources",
+    "toggleGroupAll": "Toggle all {group} permissions",
+    "toggleActionGroup": "Toggle {action} for {group}",
+    "cellAria": "{resource}: {action}",
+    "saveRole": "Save role",
+    "createRole": "Create role"
+  }
 }

@@ -1,7 +1,14 @@
-import type { AgentTool, AiAgent, NewAiAgentInput, AiAgentPatch } from '@/lib/api/endpoints/agents';
-import { transliterate } from '@/utils/projectKey';
+import type {
+  AgentTool,
+  AiAgent,
+  NewAiAgentInput,
+  AiAgentPatch,
+  ReasoningEffort,
+} from '@/lib/api/endpoints/agents';
+import { transliterate } from '@/utils/transliterate';
+import { delaySecFromMinutes } from '@/utils/runDelay';
 
-// The editable shape of an agent form. temperature/maxSteps are kept as strings so
+// The editable shape of an agent form. The number inputs are kept as strings so
 // the inputs can be left blank; they are parsed to numbers (or null) on submit.
 export interface AgentFormValue {
   name: string;
@@ -12,11 +19,16 @@ export interface AgentFormValue {
   instructions: string;
   tools: string[];
   temperature: string;
+  reasoningEffort: ReasoningEffort | null;
   maxSteps: string;
+  runTimeoutSec: string;
   memoryEnabled: boolean;
   memoryLastMessages: string;
   triggerOnMention: boolean;
   triggerOnAssign: boolean;
+  // Whether the agent may be chatted with. Off, it drops out of the chat selector and
+  // the chat routes reject it; a mention, a delegation, and a schedule are unaffected.
+  chatEnabled: boolean;
   // The member custom fields that start a run when the agent is set into one, each
   // with its own wait.
   fieldTriggers: FormFieldTrigger[];
@@ -27,7 +39,12 @@ export interface AgentFormValue {
   // else, so an agent with none authenticates and sees no project.
   projectIds: number[];
   runnerScope: 'owner' | 'team';
+  // How an external agent gets its tasks: taken by a runner, or sent to its URL.
+  delivery: AgentDelivery;
+  invocationUrl: string;
 }
+
+export type AgentDelivery = 'runner' | 'url';
 
 export interface FormFieldTrigger {
   fieldId: number;
@@ -35,6 +52,8 @@ export interface FormFieldTrigger {
 }
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
+// Only the shape is checked here; the server refuses an address it will not send to.
+const URL_PATTERN = /^https?:\/\/\S+$/;
 
 // Suggests a mention handle from the agent's name: non-Latin scripts are
 // transliterated, the result is lowercased, every run of characters the handle can't
@@ -48,11 +67,17 @@ export function suggestUsername(name: string): string {
     .slice(0, 64);
 }
 
-// Whether the form holds a submittable value: a non-empty name and a username
-// matching the server rules (1-64 chars, [a-zA-Z0-9._-]).
+// Whether the form holds a submittable value: a non-empty name, a username matching
+// the server rules (1-64 chars, [a-zA-Z0-9._-]), and a URL when the tasks are sent to one.
 export function isAgentFormValid(v: AgentFormValue): boolean {
   const username = v.username.trim();
-  return v.name.trim().length > 0 && username.length <= 64 && USERNAME_PATTERN.test(username);
+  const sendsToUrl = v.kind === 'external' && v.delivery === 'url';
+  return (
+    v.name.trim().length > 0 &&
+    username.length <= 64 &&
+    USERNAME_PATTERN.test(username) &&
+    (!sendsToUrl || URL_PATTERN.test(v.invocationUrl.trim()))
+  );
 }
 
 // The form's starting value, from an existing agent when editing or blank defaults
@@ -67,11 +92,14 @@ export function initialAgentValue(agent?: AiAgent): AgentFormValue {
     instructions: agent?.instructions ?? '',
     tools: agent?.tools ?? [],
     temperature: agent?.temperature != null ? String(agent.temperature) : '',
+    reasoningEffort: agent?.reasoningEffort ?? null,
     maxSteps: agent?.maxSteps != null ? String(agent.maxSteps) : '',
+    runTimeoutSec: agent?.runTimeoutSec != null ? String(agent.runTimeoutSec) : '',
     memoryEnabled: agent?.memoryEnabled ?? false,
     memoryLastMessages: agent?.memoryLastMessages != null ? String(agent.memoryLastMessages) : '',
     triggerOnMention: agent?.triggerOnMention ?? true,
     triggerOnAssign: agent?.triggerOnAssign ?? false,
+    chatEnabled: agent?.chatEnabled ?? true,
     fieldTriggers: (agent?.fieldTriggers ?? []).map((trigger) => ({
       fieldId: trigger.fieldId,
       delayMin: String(Math.round(trigger.delaySec / 60)),
@@ -79,16 +107,9 @@ export function initialAgentValue(agent?: AiAgent): AgentFormValue {
     delegationDelayMin: String(Math.round((agent?.delegationDelaySec ?? 120) / 60)),
     projectIds: (agent?.projects ?? []).map((project) => project.id),
     runnerScope: agent?.runnerScope ?? 'team',
+    delivery: agent?.invocationUrl ? 'url' : 'runner',
+    invocationUrl: agent?.invocationUrl ?? '',
   };
-}
-
-// The delay the server stores, for delegation and for a field trigger alike. A blank
-// or unparseable input means no delay; the value is clamped to the server's 0..24h
-// range.
-export function delaySecFromMinutes(minutes: string): number {
-  const n = Math.round(Number(minutes.trim()));
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  return Math.min(n, 1440) * 60;
 }
 
 // Parses an optional number input: blank becomes null (clears the field), a valid
@@ -102,14 +123,15 @@ function parseNum(s: string): number | null {
 
 // The kind-specific config, shared by the create input and edit patch. Both kinds
 // carry their projects, their run triggers, and their instructions; an external agent
-// adds the scope of the runs its runner receives, an internal one the model/tools
-// config.
+// adds the scope of the runs it receives and where they are sent, an internal one the
+// model/tools config.
 function configFields(v: AgentFormValue) {
   const common = {
     projectIds: v.projectIds,
     instructions: v.instructions.trim() || null,
     triggerOnMention: v.triggerOnMention,
     triggerOnAssign: v.triggerOnAssign,
+    chatEnabled: v.chatEnabled,
     fieldTriggers: v.fieldTriggers.map((trigger) => ({
       fieldId: trigger.fieldId,
       delaySec: delaySecFromMinutes(trigger.delayMin),
@@ -117,7 +139,11 @@ function configFields(v: AgentFormValue) {
     delegationDelaySec: delaySecFromMinutes(v.delegationDelayMin),
   };
   if (v.kind === 'external') {
-    return { ...common, runnerScope: v.runnerScope };
+    return {
+      ...common,
+      runnerScope: v.runnerScope,
+      invocationUrl: v.delivery === 'url' ? v.invocationUrl.trim() : null,
+    };
   }
   return {
     ...common,
@@ -125,7 +151,9 @@ function configFields(v: AgentFormValue) {
     model: v.model.trim() || null,
     tools: v.tools,
     temperature: parseNum(v.temperature),
+    reasoningEffort: v.reasoningEffort,
     maxSteps: parseNum(v.maxSteps),
+    runTimeoutSec: parseNum(v.runTimeoutSec),
     memoryEnabled: v.memoryEnabled,
     memoryLastMessages: v.memoryEnabled ? parseNum(v.memoryLastMessages) : null,
   };

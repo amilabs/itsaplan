@@ -19,7 +19,8 @@
       "signIn": "Login",
       "projects": "Projetos",
       "lastSeen": "Visto por último",
-      "email": "E-mail"
+      "email": "E-mail",
+      "active": "Ativa"
     },
     "registered": "entrou em {date}",
     "roleGod": "God",
@@ -30,7 +31,20 @@
     "verified": "Verificado",
     "notVerified": "Não verificado",
     "open": "Abrir conta",
-    "showAccess": "Mostrar acesso a projetos"
+    "showAccess": "Mostrar acesso a projetos",
+    "activeAria": "Conta ativa: {email}",
+    "activeState": {
+      "on": "Ativa",
+      "off": "Inativa"
+    },
+    "activeLock": {
+      "owner": "O proprietário da instância está sempre ativo.",
+      "agent": "A conta de um agente acompanha o agente.",
+      "scim": "Seu provedor de identidade (SCIM) decide quais contas estão ativas."
+    },
+    "deactivateTitle": "Desativar {email}?",
+    "deactivateBody": "A pessoa é desconectada na hora e não pode entrar nem usar suas chaves de API até você reativar a conta. As conexões MCP e os convites que ela enviou são removidos. Nada mais é excluído.",
+    "deactivateConfirm": "Desativar"
   },
   "userPanel": {
     "instanceOwner": "Dono da instância",
@@ -57,6 +71,7 @@
     "deleteConfirm": "Excluir conta",
     "deleteConfirmWithProjects": "{count, plural, one {Excluir conta e projeto} other {Excluir conta e projetos}}",
     "deleteMessage": "<strong>{name}</strong> perde acesso a esta instância. Issues e comentários que escreveram permanecem, com o autor desatribuído. Isso não pode ser desfeito.",
+    "deleteWorkspaceNote": "Um workspace desta conta é excluído com ela se não tiver projetos nem agentes de IA. Caso contrário, ele passa para você, com tudo o que a conta possuía sozinha nele.",
     "soleOwnerTitle": "{count, plural, one {Único dono de um projeto} other {Único dono de # projetos}}",
     "soleOwnerHint": "{count, plural, one {Quando a conta se for, ninguém poderá gerenciá-lo.} other {Quando a conta se for, ninguém poderá gerenciá-los.}}",
     "deleteWithProjects": "{count, plural, one {Excluir o projeto com a conta} other {Excluir os projetos com a conta}}",
@@ -155,28 +170,78 @@
     },
     "joined": "entrou em {date}"
   },
+  "roles": {
+    "newRole": "Nova função",
+    "empty": "Ainda não há funções do sistema.",
+    "default": "Padrão",
+    "defaultUndeletable": "A função padrão não pode ser excluída",
+    "columns": {
+      "role": "Função",
+      "permissions": "Permissões"
+    },
+    "edit": "Editar função",
+    "delete": "Excluir função",
+    "deleteTitle": "Excluir a função \"{name}\"",
+    "deleteDescription": "Esta ação não pode ser desfeita."
+  },
   "general": {
     "saved": "Padrões de projeto salvos",
     "projectDefaults": "Padrões de projeto",
     "mcpEnabled": "Ativar MCP em novos projetos",
-    "mcpEnabledHint": "Um novo projeto está no alcance de MCP do seu time desde o momento em que é criado."
+    "mcpEnabledHint": "Um novo projeto está no alcance de MCP do seu time desde o momento em que é criado.",
+    "workspacesSaved": "Configurações de workspace salvas",
+    "workspaces": "Workspaces",
+    "personalWorkspaces": "Um workspace para cada pessoa",
+    "personalWorkspacesHint": "Cada conta recebe um workspace próprio com o nome da pessoa. Desativado, as pessoas trabalham apenas nos workspaces aos quais foram adicionadas.",
+    "invites": "Convites",
+    "inviteSearch": "Sugerir pessoas ao convidar",
+    "inviteSearchHint": "Quando um proprietário ou gerente de equipe digita um endereço na janela de convite, as contas correspondentes de todos os workspaces desta instância aparecem com nome e email. Desativado, é preciso digitar o endereço completo.",
+    "invitesSaved": "Configurações de convites salvas",
+    "agents": "Agentes",
+    "agentsSaved": "Configurações de agentes salvas",
+    "embedding": "Incorporação",
+    "embedSites": "Sites confiáveis",
+    "embedSitesHint": "Issues e quadros compartilhados publicamente abrem em um frame só nesses sites. Separe os sites com vírgulas.",
+    "embedSitesInvalid": "Digite cada site como https://example.com, sem caminho.",
+    "embedSaved": "Sites confiáveis salvos",
+    "traceRetention": "Manter rastros de execução",
+    "traceRetentionHint": "Cada execução de agente registra as chamadas ao modelo e às ferramentas. Os painéis de consumo contam só as execuções mantidas.",
+    "traceDays": "{days, plural, one {# dia} other {# dias}}",
+    "traceForever": "Sempre",
+    "maxRunTime": "Tempo máximo de execução",
+    "maxRunTimeHint": "Quanto tempo uma execução de agente pode levar antes de ser interrompida e salva como falha. O limite próprio de um agente não pode ultrapassá-lo.",
+    "runMinutes": "{minutes, plural, one {# minuto} other {# minutos}}",
+    "runSeconds": "{seconds} s",
+    "concurrentRuns": "Execuções simultâneas",
+    "concurrentRunsHint": "Quantas execuções de agentes rodam ao mesmo tempo nesta instância. As demais esperam na fila. Chats e agentes externos não contam. 0 significa sem limite.",
+    "concurrentRunsInvalid": "Informe um número inteiro entre 0 e {max}."
   },
   "authentication": {
     "saved": "Configurações de autenticação salvas",
     "registration": "Registro",
     "registrationHint": "Quem pode criar uma conta nesta instância.",
+    "registrationPasswordlessNote": "O cadastro e a recuperação de senha são feitos pelo provedor de login.",
+    "inviteTtlDays": "Validade dos convites (dias)",
+    "inviteTtlDaysHint": "Depois desse prazo, o link do convite deixa de funcionar e, com o cadastro somente por convite, não permite mais criar a conta. Com 0, os convites não expiram.",
+    "inviteTtlDaysInvalid": "Informe um número inteiro de dias entre 0 e {max}.",
+    "allowedEmailDomains": "Domínios de e-mail permitidos",
+    "allowedEmailDomainsHint": "Só endereços desses domínios podem criar uma conta. Separe-os por vírgulas ou deixe vazio para permitir qualquer um. As contas existentes mantêm o acesso.",
+    "allowedEmailDomainsInvalid": "Cada domínio deve ter o formato example.com, até 100 domínios.",
     "modes": {
       "open": {
         "label": "Aberto",
-        "description": "Qualquer um que chegue à página de registro pode criar uma conta."
+        "description": "Qualquer um que chegue à página de registro pode criar uma conta.",
+        "descriptionPasswordless": "Quem entra pelo provedor pela primeira vez recebe uma conta."
       },
       "invite": {
         "label": "Somente convite",
-        "description": "Uma conta só pode ser criada por um link de convite."
+        "description": "Uma conta só pode ser criada por um link de convite.",
+        "descriptionPasswordless": "Entrar pelo provedor só cria uma conta se houver um convite pendente para esse endereço."
       },
       "closed": {
         "label": "Fechado",
-        "description": "Sem novas contas. As existentes continuam entrando."
+        "description": "Sem novas contas. As existentes continuam entrando.",
+        "descriptionPasswordless": "Nenhuma conta nova, nem para quem chega pelo provedor. As contas existentes continuam entrando."
       }
     },
     "signIn": "Opções de login",
@@ -246,7 +311,18 @@
     "testing": "Enviando…",
     "testHint": "Envie uma mensagem real com as configurações atuais sem salvá-las.",
     "testConfigureFirst": "Ative um provedor e adicione suas credenciais obrigatórias primeiro.",
-    "testSent": "E-mail de teste enviado para {email}"
+    "testSent": "E-mail de teste enviado para {email}",
+    "smtpAuth": "Autenticação",
+    "smtpAuthOptions": {
+      "password": "Senha",
+      "microsoft365": "Microsoft 365 (OAuth)"
+    },
+    "mailbox": "Caixa de correio",
+    "tenantId": "ID do locatário (tenant)",
+    "clientId": "ID do cliente",
+    "clientSecret": "Segredo do cliente",
+    "clientSecretPlaceholder": "Segredo do registro de aplicativo",
+    "microsoft365Hint": "Entra como um registro de aplicativo do Entra ID em vez da senha da caixa de correio, que pode manter o MFA. O aplicativo precisa da permissão de aplicativo SMTP.SendAsApp do Office 365 Exchange Online com consentimento de administrador, acesso a esta caixa no Exchange e SMTP AUTH ativado na caixa."
   },
   "authProvider": {
     "saved": "Provedor de autenticação salvo",
@@ -269,49 +345,5 @@
     "scopes": "Escopos",
     "scopesHint": "Separados por espaços. openid é obrigatório; profile e email preenchem o nome e o endereço.",
     "oidcRedirectUriHint": "Registre isto como um URI de redirecionamento no cliente no seu provedor de identidade. O provedor recusa o login se não corresponder exatamente."
-  },
-  "scim": {
-    "saved": "Configurações SCIM salvas",
-    "provisioning": "Provisionamento",
-    "provisioningConfigured": "Seu provedor de identidade cria, atualiza e desativa contas nesta instância.",
-    "provisioningMissing": "Gere um token primeiro.",
-    "token": "Token",
-    "noToken": "Nenhum token gerado ainda",
-    "tokenHint": "O token bearer que seu provedor de identidade envia. É mostrado uma vez; gerar um novo faz o antigo parar de funcionar.",
-    "generateToken": "Gerar token",
-    "replaceToken": "Substituir token",
-    "baseUrl": "Endpoint SCIM",
-    "baseUrlHint": "Aponte seu provedor de identidade para este endereço.",
-    "copyBaseUrl": "Copiar endpoint SCIM",
-    "groups": "Grupos",
-    "groupsHint": "Os grupos que seu provedor de identidade enviou. A lista é dele; o que cada grupo concede é definido aqui.",
-    "groupsEmpty": "Nenhum grupo foi enviado ainda.",
-    "memberCount": "{count, plural, =0 {Nenhum membro} one {# membro} other {# membros}}",
-    "grantsNothing": "ainda não concede nada",
-    "editMappings": "Editar acesso",
-    "roleOwner": "Dono",
-    "roleMember": "Membro",
-    "tokenDialog": {
-      "title": "Gerar um token SCIM",
-      "description": "O token é mostrado uma vez e não pode ser lido de volta. Qualquer token já em uso para de funcionar.",
-      "submit": "Gerar",
-      "submitPending": "Gerando…",
-      "createdTitle": "Seu token SCIM",
-      "createdDescription": "Copie-o para seu provedor de identidade agora. Ele não pode ser mostrado novamente.",
-      "copy": "Copiar token"
-    },
-    "mappings": {
-      "title": "O que {group} concede",
-      "description": "Membros deste grupo entram nos projetos listados aqui. Remover um projeto tira os vínculos que este grupo lhe deu.",
-      "empty": "Este grupo ainda não concede nada.",
-      "addProject": "Adicionar um projeto…",
-      "role": "Função",
-      "roleOwner": "Dono",
-      "roleMember": "Membro",
-      "projectRole": "Função no projeto",
-      "defaultRole": "Função padrão",
-      "remove": "Remover projeto",
-      "saved": "Acesso do grupo salvo"
-    }
   }
 }

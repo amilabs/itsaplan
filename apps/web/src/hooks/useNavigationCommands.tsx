@@ -29,7 +29,8 @@ import {
   projectPath,
 } from '@/utils/paths';
 import { ACCOUNT_SECTIONS, accountPath } from '@/utils/accountSections';
-import { AI_AGENTS_SECTION, AI_TEAM_SECTIONS } from '@/utils/settingsSections';
+import { AI_AGENTS_SECTION } from '@/utils/settingsSections';
+import { useAiTeamSections } from '@/hooks/useSettingsNavGroups';
 import { GOD_SECTIONS } from '@/utils/godSections';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectFeatures } from '@/hooks/useProjectFeatures';
@@ -53,7 +54,8 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
   const godText = useGodSectionText();
   const accountLabel = useAccountSectionLabel();
   const router = useRouter();
-  const { can } = usePermissions();
+  const { can, isMember } = usePermissions();
+  const aiTeamSections = useAiTeamSections();
   const features = useProjectFeatures();
   const { data: session } = useSession();
   const { groups } = useSettingsNavGroups(projectKey);
@@ -87,7 +89,7 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
         documentsPath(key),
         'docs pages documentation',
       );
-    for (const s of AI_TEAM_SECTIONS) {
+    for (const s of aiTeamSections) {
       if (can(s.resource, 'read'))
         add(
           `nav.ai-team.${s.slug}`,
@@ -106,13 +108,14 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
         'ai team agents',
       );
     add('nav.members', t('members'), <Users />, membersPath(key), 'team people invite');
-    add(
-      'nav.notifications',
-      t('notificationPreferences'),
-      <Bell />,
-      notificationsPath(key),
-      'email telegram',
-    );
+    if (isMember)
+      add(
+        'nav.notifications',
+        t('notificationPreferences'),
+        <Bell />,
+        notificationsPath(key),
+        'email telegram',
+      );
     // The settings destinations, already permission-filtered by the hook the
     // settings sidebar uses. The group label is a keyword so "workflow" or
     // "automation" finds its sections.

@@ -3,14 +3,14 @@
   "subtitle": "Accept it to start collaborating",
   "notFoundTitle": "Invite not found",
   "notFoundSubtitle": "This link is invalid or no longer active",
-  "notFoundMessage": "This invite link is invalid or has been revoked.",
   "goToSignIn": "Go to sign in",
   "closedTitle": "Invitation closed",
   "closedSubtitle": "This invite was already {status, select, accepted {accepted} rejected {declined} other {closed}}",
+  "expiredTitle": "Invitation expired",
+  "expiredSubtitle": "Ask whoever invited you to send a new one",
   "brandSubtitle": "You have been invited to collaborate.",
   "teamLabel": "Team",
   "projectLabel": "Project",
-  "alreadyHandled": "This invite has already been {status, select, accepted {accepted} rejected {declined} other {closed}}.",
   "goToApp": "Go to the app",
   "alreadyMember": "You are already a member of this project, so there is nothing to accept.",
   "goToProject": "Open the project",
@@ -36,7 +36,18 @@
   "switchToRegister": "Create one",
   "existingAccountNotice": "This email already has an account. Sign in with your password.",
   "passwordsDoNotMatch": "Passwords do not match.",
-  "genericError": "Something went wrong. Please try again.",
   "registerFailed": "Could not create your account.",
-  "signInFailed": "Could not sign you in."
+  "signInFailed": "Could not sign you in.",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

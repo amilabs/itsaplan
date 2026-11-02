@@ -3,14 +3,14 @@
   "subtitle": "Acceptez votre invitation pour commencer à collaborer",
   "notFoundTitle": "Invitation introuvable",
   "notFoundSubtitle": "Ce lien est invalide ou n'est plus actif",
-  "notFoundMessage": "Ce lien d'invitation est invalide ou a été révoqué.",
   "goToSignIn": "Aller à la connexion",
   "closedTitle": "Invitation clôturée",
   "closedSubtitle": "Cette invitation a déjà été {status, select, accepted {acceptée} rejected {refusée} other {clôturée}}",
+  "expiredTitle": "Invitation expirée",
+  "expiredSubtitle": "Demandez à la personne qui vous a invité de vous en envoyer une nouvelle",
   "brandSubtitle": "Vous avez été invité à collaborer sur un projet.",
   "teamLabel": "Équipe",
   "projectLabel": "Projet",
-  "alreadyHandled": "Cette invitation a déjà été {status, select, accepted {acceptée} rejected {refusée} other {clôturée}}.",
   "goToApp": "Aller à l'application",
   "alreadyMember": "Vous êtes déjà membre de ce projet, il n'y a rien à accepter.",
   "goToProject": "Ouvrir le projet",
@@ -36,7 +36,18 @@
   "switchToRegister": "En créer un",
   "existingAccountNotice": "Un compte existe déjà pour cette adresse. Connectez-vous avec votre mot de passe.",
   "passwordsDoNotMatch": "Les mots de passe ne correspondent pas.",
-  "genericError": "Une erreur est survenue. Veuillez réessayer.",
   "registerFailed": "Impossible de créer votre compte.",
-  "signInFailed": "Impossible de vous connecter."
+  "signInFailed": "Impossible de vous connecter.",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

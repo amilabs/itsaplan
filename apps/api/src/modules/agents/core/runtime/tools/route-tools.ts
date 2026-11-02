@@ -1,10 +1,18 @@
 import { createTool } from '@mastra/core/tools';
 import type { z } from 'zod';
 import type { ProjectRow } from '#modules/projects/service';
-import { routeTools, withoutFields, type McpInputSchema, type McpRouteTool } from '#mcp/generate';
+import type { ActivityPage } from '#modules/analytics/service';
+import {
+  routeTools,
+  withoutFields,
+  type McpInputSchema,
+  type McpRouteTool,
+  type ViewedAttachments,
+} from '#mcp/generate';
 import type { Permission } from '#shared/guards';
 import { dispatchTool } from '#mcp/dispatch';
 import { getMcpApp } from '#mcp/app-ref';
+import { compactProjectActivity } from './activity-result';
 import {
   AGENT_ACTIONS,
   ALWAYS_ON_ACTIONS,
@@ -19,7 +27,8 @@ import {
 // dispatched as an in-process request against the real route with the agent's API
 // key, so the route's schema, permission guard, and error model apply unchanged.
 // Nothing about an endpoint is restated here: this file only picks which routes an
-// agent gets and binds them to its project.
+// agent gets and binds them to its project: projectKey is filled in, and the guards
+// refuse an object addressed by id that belongs to another project.
 //
 // An agent's rights are therefore the intersection of two things: the actions it was
 // granted (catalog.ts, stored in ai_agent.tools) and what its team role permits.
@@ -54,6 +63,26 @@ function parseBody(text: string): unknown {
   } catch {
     return text;
   }
+}
+
+// The images of an image tool reach the model as image parts, not as base64 text, the
+// way the MCP endpoint hands them to a client (imageContent in mcp/server.ts). A failed
+// call carries no images and goes to the model unchanged.
+function imageModelOutput(output: unknown) {
+  const { images, others } = output as Partial<ViewedAttachments>;
+  if (!Array.isArray(images)) return undefined;
+  const named = images.map(({ id, filename, contentType }) => ({ id, filename, contentType }));
+  return {
+    type: 'content',
+    value: [
+      { type: 'text', text: JSON.stringify({ images: named, others }) },
+      ...images.map((image) => ({
+        type: 'image-data',
+        data: image.data,
+        mediaType: image.contentType,
+      })),
+    ],
+  };
 }
 
 // The catalog list_ai_agent_tools returns: each action with the permission its route
@@ -107,6 +136,7 @@ function buildOne(
     id: route.name,
     description: overrides?.description ?? route.description,
     inputSchema: jsonSchemaInput(schema),
+    toModelOutput: route.images ? imageModelOutput : undefined,
     execute: async (input) => {
       const args: Record<string, unknown> = { ...input };
       for (const name of hidden) delete args[name];
@@ -116,12 +146,16 @@ function buildOne(
         route,
         args,
         { kind: 'api-key', apiKey },
-        { viaMcpEndpoint: false },
+        { viaMcpEndpoint: false, projectId: project.id },
       );
       const body = parseBody(text);
       // A route failure is returned to the model as a result rather than thrown, so
       // it can correct the call instead of the run aborting. Custom tools do the same.
-      return isError ? { error: body } : body;
+      if (isError) return { error: body };
+      if (route.name === 'get_project_activity') {
+        return compactProjectActivity(body as ActivityPage);
+      }
+      return body;
     },
   });
 }

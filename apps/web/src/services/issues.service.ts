@@ -23,11 +23,15 @@ import {
   type BoardIssues,
   type SubtaskDisposition,
   getIssue,
+  listIssueAgentRuns,
+  getIssueAgentRunTrace,
   listIssueCycles,
   getIssueBySeq,
   searchIssues,
+  searchAllIssues,
   updateIssue,
   deleteIssue,
+  moveIssue,
   archiveIssue,
   restoreIssue,
   setFieldValue,
@@ -166,6 +170,38 @@ export function useIssueSearchQuery(
   });
 }
 
+// The palette's search in every project the user can read. It leaves out the
+// current project, whose own group lists its matches above.
+// While that project is still loading its id is unknown, so nothing is searched or
+// shown: a search without the id, or one cached from a page with no project, would
+// list its issues here too. Disabled, it shows no cached hits either.
+export function useOtherProjectIssueSearch(
+  q: string,
+  current: { key: string | null; id: number | null },
+  opts: { enabled: boolean },
+) {
+  const term = q.trim();
+  const active = opts.enabled && (current.key === null || current.id !== null);
+  const search = useQuery({
+    queryKey: qk.issueSearchAll(term, current.id),
+    queryFn: () =>
+      searchAllIssues({
+        q: term,
+        limit: 50,
+        perProjectLimit: 5,
+        excludeProjectId: current.id ?? undefined,
+      }),
+    enabled: active && term.length > 0,
+    // Only the term changed: the previous hits leave out the same project.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === current.id ? previous : undefined,
+  });
+  return {
+    hits: active ? (search.data ?? []) : [],
+    fetching: active && search.isFetching,
+  };
+}
+
 // Updating an issue (drag/drop move, or an inline field edit). When `projectKey` is
 // given the project detail is patched optimistically so the change shows before the
 // request resolves, then reconciled on settle. Issue detail, comments and
@@ -209,6 +245,27 @@ function invalidateGroupings(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: qk.anyInitiatives });
   void qc.invalidateQueries({ queryKey: qk.anyCycle });
   void qc.invalidateQueries({ queryKey: qk.anyCycles });
+}
+
+interface IssueMove {
+  id: number;
+  target: { id: number; ref: string };
+  columnId?: number;
+}
+
+// The issue and its subtasks leave one board and join another, so both are refetched.
+export function useMoveIssue(projectKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, target, columnId }: IssueMove) => moveIssue(id, target.id, columnId),
+    onSuccess: (_data, { id, target }) => {
+      void qc.invalidateQueries({ queryKey: qk.boardIssues(projectKey) });
+      void qc.invalidateQueries({ queryKey: qk.boardIssues(target.ref) });
+      void qc.invalidateQueries({ queryKey: qk.issue(id) });
+      void qc.invalidateQueries({ queryKey: qk.feed(id) });
+      invalidateGroupings(qc);
+    },
+  });
 }
 
 // Deletes an issue. Drops it from the project detail immediately and discards its
@@ -451,5 +508,22 @@ export function useCreateIssue() {
       void qc.invalidateQueries({ queryKey: qk.boardIssues(projectKey) });
       invalidateGroupings(qc);
     },
+  });
+}
+
+export function useIssueAgentRunsQuery(issueId: number, enabled: boolean) {
+  return useInfiniteQuery({
+    queryKey: qk.issueAgentRuns(issueId),
+    queryFn: ({ pageParam }) => listIssueAgentRuns(issueId, pageParam),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled,
+  });
+}
+
+export function useIssueAgentRunTraceQuery(issueId: number, runId: number, traceId?: string) {
+  return useQuery({
+    queryKey: qk.issueAgentRunTrace(issueId, runId, traceId),
+    queryFn: () => getIssueAgentRunTrace(issueId, runId, traceId),
   });
 }

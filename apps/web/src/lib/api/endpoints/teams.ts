@@ -1,5 +1,5 @@
 import type { AnalyticsStats } from '@/lib/api/endpoints/analytics';
-import type { Project } from '@/lib/api/endpoints/projects';
+import type { AccessVia, Project } from '@/lib/api/endpoints/projects';
 import { request } from '@/lib/api/core/client';
 import type { Permissions } from '@/lib/api/endpoints/roles';
 import { pageQuery, type Page, type PageParams } from '@/lib/api/core/paging';
@@ -12,6 +12,7 @@ import {
 // A team the caller belongs to. It owns projects and holds its own member list.
 export interface Team {
   id: number;
+  workspaceId: number;
   name: string;
   // The team's segment in the app's paths (/acme/MKT). Null until an owner sets one.
   slug: string | null;
@@ -23,11 +24,15 @@ export interface Team {
   // The caller's rank in the team. The API also answers an agent's own key, which reads
   // 'agent' there; an agent never opens this app, so a person's rank is what arrives.
   role: TeamRole;
+  // 'workspace' when the caller is not in the team and reaches it through their role in
+  // its workspace; source and joinedAt are then the team's defaults.
+  via: AccessVia;
   // How the caller's own membership came about. A provisioned one is the identity
   // provider's: the team cannot be left while it stands.
   source: 'invite' | 'scim';
   joinedAt: string;
   projectCount: number;
+  templateCount: number;
   memberCount: number;
   // How many of those members are owners: the last one cannot leave.
   ownerCount: number;
@@ -76,6 +81,7 @@ export interface TeamProject {
   memberCount: number;
   owners: { userId: string; name: string; image: string | null }[];
   isMember: boolean;
+  archivedAt: string | null;
   createdAt: string;
 }
 
@@ -116,9 +122,14 @@ export interface TeamLead {
 export interface TeamProjectDetail {
   lastActivityAt: string | null;
   stats: AnalyticsStats;
-  // The reader's own membership in the project, null when they only run the team.
-  // A provisioned one ends at the identity provider, so it cannot be left here.
-  viewer: { role: MemberRole; source: 'invite' | 'scim'; permissions: Permissions } | null;
+  // The reader's access to the project, null when they only run the team. A
+  // provisioned membership ends at the identity provider, so it cannot be left here.
+  viewer: {
+    role: MemberRole;
+    via: AccessVia;
+    source: 'invite' | 'scim';
+    permissions: Permissions;
+  } | null;
 }
 
 // One member of a project the team owns. The access their membership resolves to is
@@ -154,24 +165,6 @@ export interface TeamProjectDefaults {
   defaultAgentIds: number[];
 }
 
-// Parts of a source project the copy can carry over, one key per project settings
-// section. Passed to copyTeamProject as an include map; omitted keys are not
-// copied. The API force-enables dependencies (a view needs its
-// states/types/labels/fields).
-export type CopyProjectIncludeKey =
-  | 'states'
-  | 'issueTypes'
-  | 'labels'
-  | 'customFields'
-  | 'views'
-  | 'dashboards'
-  | 'documents'
-  | 'actions'
-  | 'configuration'
-  | 'webhooks'
-  | 'agents'
-  | 'schedules';
-
 export const listTeams = () => request<Team[]>('/teams');
 
 export const getTeam = (teamId: number) => request<TeamDetail>(`/teams/${teamId}`);
@@ -206,11 +199,14 @@ export const listTeamProjectMembers = (
     `/teams/${teamId}/projects/${projectId}/members${memberListQuery(params)}`,
   );
 
-export const createTeam = (input: { name: string; slug: string }) =>
+export const createTeam = (input: { name: string; slug: string; workspaceId: number }) =>
   request<Team>('/teams', { method: 'POST', body: JSON.stringify(input) });
 
 export const updateTeam = (teamId: number, input: { name?: string; slug?: string }) =>
   request<Team>(`/teams/${teamId}`, { method: 'PATCH', body: JSON.stringify(input) });
+
+export const deleteTeam = (teamId: number) =>
+  request<void>(`/teams/${teamId}`, { method: 'DELETE' });
 
 export const leaveTeam = (teamId: number) =>
   request<void>(`/teams/${teamId}/leave`, { method: 'POST' });
@@ -244,9 +240,16 @@ export const updateTeamProjectDefaults = (teamId: number, defaultAgentIds: numbe
 
 // The projects a team owns: created, copied, and deleted by the team's own ranks
 // (owner/manager create and copy, owner deletes) rather than by project membership.
+// With templateId the project starts with what that project template holds.
 export const createTeamProject = (
   teamId: number,
-  input: { key: string; name: string; description?: string; preset?: string },
+  input: {
+    key: string;
+    name: string;
+    description?: string;
+    preset?: string;
+    templateId?: number;
+  },
 ) =>
   request<Project>(`/teams/${teamId}/projects`, {
     method: 'POST',
@@ -260,7 +263,9 @@ export const copyTeamProject = (
     key: string;
     name: string;
     description?: string;
-    include?: Partial<Record<CopyProjectIncludeKey, boolean>>;
+    // One key per part (useCopyColumns); an omitted key is not copied. The API
+    // force-enables dependencies (a view needs its states/types/labels/fields).
+    include?: Record<string, boolean>;
   },
 ) =>
   request<Project>(`/teams/${teamId}/projects/${projectId}/copy`, {
@@ -277,6 +282,12 @@ export const updateTeamProject = (
     method: 'PATCH',
     body: JSON.stringify(patch),
   });
+
+export const archiveTeamProject = (teamId: number, projectId: number) =>
+  request<Project>(`/teams/${teamId}/projects/${projectId}/archive`, { method: 'POST' });
+
+export const restoreTeamProject = (teamId: number, projectId: number) =>
+  request<Project>(`/teams/${teamId}/projects/${projectId}/restore`, { method: 'POST' });
 
 export const deleteTeamProject = (teamId: number, projectId: number) =>
   request<void>(`/teams/${teamId}/projects/${projectId}`, { method: 'DELETE' });

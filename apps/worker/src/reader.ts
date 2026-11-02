@@ -2,11 +2,40 @@ import type {
   CanonicalState,
   CanonicalLabel,
   CanonicalCycle,
+  CanonicalCustomField,
+  CanonicalChecklist,
   CanonicalIssue,
   CanonicalRelation,
   CanonicalComment,
   CanonicalAttachment,
 } from './canonical';
+
+// Thrown when a job's source has no entry in the import source registry. No retry
+// can fix it, so the worker fails the job at once instead of retrying it.
+export class UnsupportedImportSourceError extends Error {
+  constructor(jobId: number, source: string) {
+    super(`import job ${jobId} has unsupported source "${source}"`);
+  }
+}
+
+// Thrown by a source adapter when the source's rate limit is reached. The worker
+// reschedules the job after retryAfterMs; a rate limit is waited out and does not
+// count toward the attempt limit.
+export class SourceRateLimitedError extends Error {
+  constructor(
+    public readonly retryAfterMs: number,
+    message = 'source rate limit reached',
+  ) {
+    super(message);
+  }
+}
+
+// headers is for a source whose file host needs the source's own credential; the
+// Attachments phase sends them with the download and nowhere else.
+export interface AttachmentDownload {
+  url: string;
+  headers?: Record<string, string>;
+}
 
 // One page of a cursor-paginated list. cursor is the exact, opaque value the
 // source API returned for the next page, or null when there is no next page.
@@ -18,11 +47,12 @@ export interface Page<T> {
   cursor: string | null;
 }
 
-// The port a source-specific adapter implements (plane-adapter.ts is the only
-// implementation today). Shaped from what import-worker.ts actually needs to
-// drive the Discover/Create/Link phases, not speculatively:
+// The port a source-specific adapter implements (plane-adapter.ts,
+// linear-adapter.ts, trello-adapter.ts). Shaped from what import-worker.ts
+// actually needs to drive the Discover/Create/Link phases, not speculatively:
 //
-// - states/labels/cycles are small, unpaginated project-level lists.
+// - states/labels/cycles/custom fields are small, unpaginated project-level
+//   lists. A source without one of them returns [].
 // - listIssues walks the source's own pagination for the Discover snapshot.
 // - getIssue re-fetches one issue by id: Create resumes from itsaplan's own
 //   import_record snapshot, not from the source's pagination position, so it
@@ -35,14 +65,19 @@ export interface SourceReader {
   listStates(): Promise<CanonicalState[]>;
   listLabels(): Promise<CanonicalLabel[]>;
   listCycles(): Promise<CanonicalCycle[]>;
+  listCustomFields(): Promise<CanonicalCustomField[]>;
   listIssues(cursor: string | null): Promise<Page<CanonicalIssue>>;
   getIssue(sourceId: string): Promise<CanonicalIssue>;
   listIssueRelations(issueSourceId: string): Promise<CanonicalRelation[]>;
   listIssueComments(issueSourceId: string): Promise<CanonicalComment[]>;
   listIssueAttachments(issueSourceId: string): Promise<CanonicalAttachment[]>;
-  // Resolves one attachment's download URL, fresh each call: the source's own
+  listIssueChecklists(issueSourceId: string): Promise<CanonicalChecklist[]>;
+  // Resolves how to download one attachment, fresh each call: the source's own
   // resolved URL is a presigned link that expires (Plane's lasts exactly an
   // hour), so this is called at the moment of download, never cached or
   // resolved ahead of time.
-  resolveAttachmentDownloadUrl(issueSourceId: string, attachmentSourceId: string): Promise<string>;
+  resolveAttachmentDownload(
+    issueSourceId: string,
+    attachmentSourceId: string,
+  ): Promise<AttachmentDownload>;
 }

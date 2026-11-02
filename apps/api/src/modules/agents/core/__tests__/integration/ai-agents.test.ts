@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { apikey, db } from '@repo/db';
+import { agentRun, apikey, db } from '@repo/db';
 import { eq } from 'drizzle-orm';
-import { apiKeyApi, authedApi, type Api } from '#tests/helpers/app';
+import { apiKeyApi, authedApi, type Api, ownWorkspaceId, createProject } from '#tests/helpers/app';
 import { createRole, listProjectRoles } from '#tests/helpers/roles';
 import { addProjectMember } from '#tests/helpers/members';
 import { signUpTestUser } from '#tests/helpers/auth';
@@ -9,6 +9,9 @@ import { resetDb } from '#tests/helpers/db';
 import { createAgent, projectIdOf } from '#tests/helpers/agents';
 import { createCredential } from '#tests/helpers/integrations';
 import { untaggedRoutes } from '#tests/helpers/mcp';
+import { streamAgent, type AgentRunEvent } from '../../runtime';
+import { getMastra } from '../../runtime/observability';
+import { processAgentRuns } from '../../run-poller';
 
 // AI agents owned by a team. Each agent is backed by a hidden bot user, owns a
 // better-auth API key, and is a member of the projects it is attached to, acting under
@@ -21,7 +24,7 @@ import { untaggedRoutes } from '#tests/helpers/mcp';
 async function setup() {
   const owner = await signUpTestUser({ name: 'Owner' });
   const asOwner = authedApi(owner.cookie);
-  const project = await asOwner.projects.post({ key: 'MKT', name: 'Marketing' });
+  const project = await createProject(asOwner, { key: 'MKT', name: 'Marketing' });
   return { owner, asOwner, teamId: project.data!.teamId };
 }
 
@@ -33,6 +36,37 @@ function openAiCredential(api: Api, projectKey = 'MKT'): Promise<number> {
     integrationKey: 'openai',
     credential: { apiKey: 'sk-secret-1234' },
   });
+}
+
+// An OpenAI-compatible endpoint on localhost that answers every chat completion with
+// "ok" and keeps the request bodies it received, so a test can read what a run sent.
+function stubModelEndpoint() {
+  const bodies: Record<string, unknown>[] = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const body = (await req.json()) as Record<string, unknown>;
+      bodies.push(body);
+      const choice = { index: 0, finish_reason: 'stop' };
+      if (!body.stream) {
+        return Response.json({
+          id: 'c1',
+          object: 'chat.completion',
+          created: 0,
+          model: body.model,
+          choices: [{ ...choice, message: { role: 'assistant', content: 'ok' } }],
+        });
+      }
+      const chunk = { id: 'c1', object: 'chat.completion.chunk', created: 0, model: body.model };
+      const events = [
+        { ...chunk, choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' } }] },
+        { ...chunk, choices: [{ ...choice, delta: {} }] },
+      ];
+      const sse = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') + 'data: [DONE]\n\n';
+      return new Response(sse, { headers: { 'content-type': 'text/event-stream' } });
+    },
+  });
+  return { baseUrl: `http://127.0.0.1:${server.port}/v1`, bodies, stop: () => server.stop(true) };
 }
 
 describe('ai agents', () => {
@@ -157,7 +191,11 @@ describe('ai agents', () => {
 
   it("rejects another team's model credential with 400", async () => {
     const { asOwner } = await setup();
-    const otherTeam = await asOwner.teams.post({ name: 'Engineering', slug: 'engineering' });
+    const otherTeam = await asOwner.teams.post({
+      name: 'Engineering',
+      slug: 'engineering',
+      workspaceId: await ownWorkspaceId(asOwner),
+    });
     await asOwner.teams({ teamId: otherTeam.data!.id }).projects.post({
       key: 'ENG',
       name: 'Engineering',
@@ -249,6 +287,107 @@ describe('ai agents', () => {
     expect(upd.data).toMatchObject({ memoryEnabled: false, memoryLastMessages: 15 });
   });
 
+  it('stores the reasoning effort on an internal agent and clears it with null', async () => {
+    const { asOwner, teamId } = await setup();
+    const res = await createAgent(asOwner, 'MKT', {
+      name: 'Bot',
+      username: 'bot',
+      kind: 'internal',
+      reasoningEffort: 'low',
+    });
+    expect(res.status).toBe(201);
+    expect(res.data?.agent).toMatchObject({ reasoningEffort: 'low' });
+    const agent = agents(asOwner, teamId)({ agentId: res.data!.agent.id });
+
+    expect((await agent.patch({ reasoningEffort: 'high' })).data).toMatchObject({
+      reasoningEffort: 'high',
+    });
+    expect((await agent.get()).data).toMatchObject({ reasoningEffort: 'high' });
+    expect((await agent.patch({ reasoningEffort: null })).data).toMatchObject({
+      reasoningEffort: null,
+    });
+  });
+
+  it('stores the run time limit on an internal agent and clears it with null', async () => {
+    const { asOwner, teamId } = await setup();
+    const res = await createAgent(asOwner, 'MKT', {
+      name: 'Bot',
+      username: 'bot',
+      kind: 'internal',
+      runTimeoutSec: 600,
+    });
+    expect(res.data?.agent).toMatchObject({ runTimeoutSec: 600 });
+    const agent = agents(asOwner, teamId)({ agentId: res.data!.agent.id });
+
+    expect((await agent.patch({ runTimeoutSec: 0 })).status).toBe(400);
+    expect((await agent.patch({ runTimeoutSec: null })).data).toMatchObject({
+      runTimeoutSec: null,
+    });
+  });
+
+  it('rejects an unknown reasoning effort with 400 and keeps the stored one', async () => {
+    const { asOwner, teamId } = await setup();
+    const res = await createAgent(asOwner, 'MKT', {
+      name: 'Bot',
+      username: 'bot',
+      kind: 'internal',
+      reasoningEffort: 'medium',
+    });
+    const agent = agents(asOwner, teamId)({ agentId: res.data!.agent.id });
+    // @ts-expect-error — not one of the levels the schema accepts.
+    expect((await agent.patch({ reasoningEffort: 'max' })).status).toBe(400);
+    expect((await agent.get()).data).toMatchObject({ reasoningEffort: 'medium' });
+  });
+
+  it('stores no reasoning effort on an external agent', async () => {
+    const { asOwner } = await setup();
+    const res = await createAgent(asOwner, 'MKT', {
+      name: 'Ext',
+      username: 'ext',
+      kind: 'external',
+      reasoningEffort: 'high',
+    });
+    expect(res.data?.agent).toMatchObject({ reasoningEffort: null });
+  });
+
+  it('sends the reasoning effort to the model as reasoning_effort, and none when unset', async () => {
+    const { asOwner, teamId } = await setup();
+    const endpoint = stubModelEndpoint();
+    try {
+      const credentialId = await createCredential(asOwner, 'MKT', {
+        integrationKey: 'openai-compatible',
+        credential: { apiKey: 'sk-test', baseUrl: endpoint.baseUrl },
+      });
+      const created = await createAgent(asOwner, 'MKT', {
+        name: 'Bot',
+        username: 'bot',
+        kind: 'internal',
+        modelCredentialId: credentialId,
+        model: 'stub-model',
+        reasoningEffort: 'low',
+      });
+      const agentId = created.data!.agent.id;
+      const run = () =>
+        asOwner
+          .projects({ projectKey: 'MKT' })
+          ['ai-agents']({ agentId })
+          .run.post({ prompt: 'hi' });
+
+      expect((await run()).data).toMatchObject({ text: 'ok' });
+      expect(endpoint.bodies.at(-1)).toMatchObject({
+        model: 'stub-model',
+        reasoning_effort: 'low',
+      });
+
+      await agents(asOwner, teamId)({ agentId }).patch({ reasoningEffort: null });
+      expect((await run()).data).toMatchObject({ text: 'ok' });
+      expect(endpoint.bodies.at(-1)).not.toHaveProperty('reasoning_effort');
+    } finally {
+      endpoint.stop();
+      await getMastra().observability.flush();
+    }
+  });
+
   it("defaults an internal agent's triggers and stores overrides", async () => {
     const { asOwner, teamId } = await setup();
     const def = await createAgent(asOwner, 'MKT', { name: 'T1', username: 't1', kind: 'internal' });
@@ -272,7 +411,75 @@ describe('ai agents', () => {
     expect(upd.data).toMatchObject({ triggerOnMention: true, triggerOnAssign: true });
   });
 
-  it("attaches an agent to a project on the team's default role", async () => {
+  // The "@" menu reads this to leave out the agents a mention would not start.
+  it("tells the project's assignees which agents answer a mention", async () => {
+    const { asOwner } = await setup();
+    await createAgent(asOwner, 'MKT', { name: 'Listens', username: 'listens', kind: 'internal' });
+    await createAgent(asOwner, 'MKT', {
+      name: 'Deaf',
+      username: 'deaf',
+      kind: 'internal',
+      triggerOnMention: false,
+    });
+
+    const project = await asOwner.projects({ projectKey: 'MKT' }).get();
+    const byHandle = new Map(project.data!.assignees.map((a) => [a.username, a]));
+
+    expect(byHandle.get('listens')?.respondsToMention).toBe(true);
+    expect(byHandle.get('deaf')?.respondsToMention).toBe(false);
+    expect(project.data!.assignees.find((a) => a.kind === 'member')?.respondsToMention).toBeNull();
+  });
+
+  it('defaults chatEnabled to true and turns it off with a patch', async () => {
+    const { asOwner, teamId } = await setup();
+    const def = await createAgent(asOwner, 'MKT', { name: 'C1', username: 'c1', kind: 'internal' });
+    const agentId = def.data!.agent.id;
+    expect(def.data?.agent).toMatchObject({ chatEnabled: true });
+
+    const upd = await agents(asOwner, teamId)({ agentId }).patch({ chatEnabled: false });
+    expect(upd.data).toMatchObject({ chatEnabled: false });
+    const read = await agents(asOwner, teamId)({ agentId }).get();
+    expect(read.data).toMatchObject({ chatEnabled: false });
+  });
+
+  it('refuses the chat of an agent with chat off, while a mention still runs it', async () => {
+    const { owner, asOwner } = await setup();
+    const agent = (
+      await createAgent(asOwner, 'MKT', {
+        name: 'Bot',
+        username: 'bot',
+        kind: 'internal',
+        chatEnabled: false,
+      })
+    ).data!.agent;
+    expect(agent).toMatchObject({ chatEnabled: false });
+
+    const run = await asOwner
+      .projects({ projectKey: 'MKT' })
+      ['ai-agents']({ agentId: agent.id })
+      .run.post({ prompt: 'hi' });
+    expect(run.status).toBe(403);
+    expect(run.error?.value).toMatchObject({ code: 'AGENT_CHAT_DISABLED' });
+    const events: AgentRunEvent[] = [];
+    for await (const event of streamAgent(agent.id, agent.projects[0].id, 'hi', {
+      callerUserId: owner.userId,
+    })) {
+      events.push(event);
+    }
+    expect(events[0]).toEqual({ type: 'error', message: 'This agent is not available in chat' });
+
+    const columnId = (await asOwner.projects({ projectKey: 'MKT' }).get()).data!.columns[0].id;
+    const issue = (
+      await asOwner.projects({ projectKey: 'MKT' }).issues.post({ columnId, title: 'Task' })
+    ).data!;
+    await asOwner.issues({ issueId: issue.id }).comments.post({ body: 'please review @bot' });
+    await processAgentRuns();
+    // The agent has no model credential, so a run that got past every gate fails on it.
+    const [queued] = await db.select().from(agentRun).where(eq(agentRun.issueId, issue.id));
+    expect(queued).toMatchObject({ attempts: 1, lastError: 'Agent has no model credential set' });
+  });
+
+  it('attaches an agent to a project on the default role', async () => {
     const { asOwner } = await setup();
     const roles = await listProjectRoles(asOwner, 'MKT');
     const defaultRole = roles.data!.find((r) => r.isDefault)!;
@@ -688,14 +895,14 @@ describe('ai agents', () => {
     // A second account addresses the agent through its own team, where the store finds
     // nothing: every lookup is scoped to (agentId, teamId).
     const second = authedApi((await signUpTestUser()).cookie);
-    const otherProject = await second.projects.post({ key: 'ENG', name: 'Engineering' });
+    const otherProject = await createProject(second, { key: 'ENG', name: 'Engineering' });
     const res = await agents(second, otherProject.data!.teamId)({ agentId }).patch({ name: 'x' });
     expect(res.status).toBe(404);
   });
 
   it('lists only the agents working in the project the filter names', async () => {
     const { asOwner, teamId } = await setup();
-    await asOwner.projects.post({ key: 'ENG', name: 'Engineering' });
+    await createProject(asOwner, { key: 'ENG', name: 'Engineering' });
     await createAgent(asOwner, 'MKT', { name: 'Mkt Bot', username: 'mkt-bot', kind: 'external' });
     await createAgent(asOwner, 'ENG', { name: 'Eng Bot', username: 'eng-bot', kind: 'external' });
 
@@ -709,7 +916,7 @@ describe('ai agents', () => {
 
   it('attaches an agent to a second project and detaches it again', async () => {
     const { asOwner, teamId } = await setup();
-    await asOwner.projects.post({ key: 'ENG', name: 'Engineering' });
+    await createProject(asOwner, { key: 'ENG', name: 'Engineering' });
     const created = await createAgent(asOwner, 'MKT', {
       name: 'Bot',
       username: 'bot',
@@ -739,7 +946,7 @@ describe('ai agents', () => {
       kind: 'external',
     });
     const second = authedApi((await signUpTestUser()).cookie);
-    await second.projects.post({ key: 'ENG', name: 'Engineering' });
+    await createProject(second, { key: 'ENG', name: 'Engineering' });
 
     const res = await agents(
       asOwner,
@@ -781,8 +988,8 @@ describe('ai agents', () => {
     ).toBe(403);
   });
 
-  // The run happy path calls the model provider, so it is exercised out of band,
-  // not in this suite. Here we only assert the guards that run before any model call.
+  // A run against a real model provider is exercised out of band, not in this suite.
+  // Here we only assert the guards that run before any model call.
   it('returns 404 when running a missing agent', async () => {
     const { asOwner } = await setup();
     const res = await asOwner
@@ -915,11 +1122,14 @@ describe('ai agents', () => {
 
   // An agent is set up and talked to entirely over MCP. What stays out serves the chat
   // UI: the streamed run and the caller's own thread history, plus this agent's run
-  // history — the analytics routes carry the project-wide run feed MCP reads instead.
+  // history and the traces of those runs — the analytics routes carry the project-wide
+  // run feed MCP reads instead.
   it('exposes agent management and the run to MCP', () => {
     const untagged = untaggedRoutes((route) => route.includes('/ai-agents'));
     expect(untagged).toEqual([
       'GET /teams/:teamId/ai-agents/:agentId/runs',
+      'GET /teams/:teamId/ai-agents/:agentId/traces',
+      'GET /teams/:teamId/ai-agents/:agentId/traces/:traceId',
       'POST /projects/:projectKey/ai-agents/:agentId/run/stream',
       'GET /projects/:projectKey/ai-agents/:agentId/threads',
       'PUT /projects/:projectKey/ai-agents/:agentId/threads/:threadId/favorite',

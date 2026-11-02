@@ -3,14 +3,14 @@
   "subtitle": "اقبلها وابدأ الشغل مع الفريق",
   "notFoundTitle": "الدعوة غير موجودة",
   "notFoundSubtitle": "الرابط ده مش صالح أو مبقاش شغال",
-  "notFoundMessage": "رابط الدعوة ده مش صالح أو اتلغى.",
   "goToSignIn": "الانتقال إلى تسجيل الدخول",
   "closedTitle": "الدعوة مُغلقة",
   "closedSubtitle": "هذه الدعوة {status, select, accepted {مقبولة} rejected {مرفوضة} other {مُغلقة}} بالفعل",
+  "expiredTitle": "انتهت صلاحية الدعوة",
+  "expiredSubtitle": "اطلب ممن دعاك أن يرسل دعوة جديدة",
   "brandSubtitle": "اتدعيت تشتغل مع الفريق.",
   "teamLabel": "الفريق",
   "projectLabel": "المشروع",
-  "alreadyHandled": "هذه الدعوة {status, select, accepted {مقبولة} rejected {مرفوضة} other {مُغلقة}} بالفعل.",
   "goToApp": "الانتقال إلى التطبيق",
   "alreadyMember": "أنت عضو في هذا المشروع بالفعل، فلا شيء لقبوله.",
   "goToProject": "فتح المشروع",
@@ -36,7 +36,18 @@
   "switchToRegister": "أنشئ واحدًا",
   "existingAccountNotice": "البريد ده له حساب بالفعل. سجّل الدخول بكلمة مرورك.",
   "passwordsDoNotMatch": "كلمتا المرور غير متطابقتين.",
-  "genericError": "حدث خطأ ما. حاول مرة أخرى.",
   "registerFailed": "تعذّر إنشاء حسابك.",
-  "signInFailed": "تعذّر تسجيل دخولك."
+  "signInFailed": "تعذّر تسجيل دخولك.",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

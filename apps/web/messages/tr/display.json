@@ -1,0 +1,103 @@
+{
+  "title": "Görünüm",
+  "layouts": {
+    "kanban": "Kanban",
+    "table": "Tablo",
+    "timeline": "Zaman Çizelgesi",
+    "calendar": "Takvim"
+  },
+  "sortFields": {
+    "manual": "Manuel",
+    "title": "Başlık",
+    "identifier": "İş numarası",
+    "status": "Durum",
+    "priority": "Öncelik",
+    "assignee": "Sorumlu",
+    "type": "Tür",
+    "startDate": "Başlangıç tarihi",
+    "dueDate": "Bitiş tarihi",
+    "created": "Oluşturulma",
+    "updated": "Güncellenme"
+  },
+  "groupFields": {
+    "none": "Gruplama yok",
+    "status": "Durum",
+    "assignee": "Sorumlu",
+    "delegate": "Temsilci",
+    "priority": "Öncelik",
+    "type": "Tür",
+    "initiative": "Girişim",
+    "cycle": "Döngü"
+  },
+  "properties": {
+    "id": "Kimlik",
+    "status": "Durum",
+    "priority": "Öncelik",
+    "type": "Tür",
+    "assignee": "Sorumlu",
+    "delegate": "Temsilci",
+    "initiative": "Girişim",
+    "cycle": "Döngü",
+    "labels": "Etiketler",
+    "estimatePoints": "Hikâye puanı",
+    "estimateTime": "Süre tahmini",
+    "startDate": "Başlangıç tarihi",
+    "dueDate": "Bitiş tarihi",
+    "created": "Oluşturulma",
+    "updated": "Güncellenme",
+    "statusAge": "Durumda geçen süre"
+  },
+  "stateTypes": {
+    "backlog": "İş Havuzu (Backlog)",
+    "unstarted": "Başlanmadı",
+    "started": "Başlandı",
+    "completed": "Tamamlandı",
+    "canceled": "İptal edildi"
+  },
+  "timelineScales": {
+    "week": "Hafta",
+    "month": "Ay",
+    "quarter": "Çeyrek"
+  },
+  "weekStart": {
+    "0": "Pazar",
+    "1": "Pazartesi"
+  },
+  "dateFields": {
+    "dueDate": "Bitiş tarihi",
+    "startDate": "Başlangıç tarihi"
+  },
+  "rows": {
+    "columns": "Sütunlar",
+    "grouping": "Gruplama",
+    "swimlanes": "Kulvarlar (Swimlanes)",
+    "subGrouping": "Alt gruplama",
+    "ordering": "Sıralama",
+    "ascending": "Artan",
+    "descending": "Azalan",
+    "emptyColumns": "Boş sütunlar",
+    "emptyGroups": "Boş gruplar",
+    "links": "Bağlantılar",
+    "separateCards": "Ayrı kartlar olarak",
+    "separateRows": "Ayrı satırlar olarak",
+    "nestedInCard": "Üst kartın içinde",
+    "nestedInRow": "Üst satırın içinde",
+    "subtasksCollapsed": "Daraltılmış başlat",
+    "groupsCollapsed": "Grupları daraltılmış başlat",
+    "placeBy": "Konumlandırma kriteri",
+    "weekStartsOn": "Haftanın başlangıç günü",
+    "scale": "Ölçek",
+    "dragToReorder": "Sıralamak için sürükleyin",
+    "customField": "Özel alan",
+    "viewIcon": "Görünüm simgesi"
+  },
+  "sections": {
+    "board": "Pano",
+    "rows": "Satırlar",
+    "show": "Göster",
+    "subtasks": "Alt işler",
+    "cardProperties": "Kart özellikleri",
+    "columns": "Sütunlar"
+  },
+  "layoutCommand": "{layout} düzeni"
+}

@@ -3,14 +3,14 @@
   "subtitle": "Terima undangan untuk mulai berkolaborasi",
   "notFoundTitle": "Undangan tidak ditemukan",
   "notFoundSubtitle": "Tautan ini tidak valid atau sudah tidak aktif",
-  "notFoundMessage": "Tautan undangan ini tidak valid atau telah dicabut.",
   "goToSignIn": "Buka halaman masuk",
   "closedTitle": "Undangan ditutup",
   "closedSubtitle": "Undangan ini sudah {status, select, accepted {diterima} rejected {ditolak} other {ditutup}}",
+  "expiredTitle": "Undangan kedaluwarsa",
+  "expiredSubtitle": "Minta orang yang mengundang Anda untuk mengirim undangan baru",
   "brandSubtitle": "Anda telah diundang untuk berkolaborasi.",
   "teamLabel": "Tim",
   "projectLabel": "Proyek",
-  "alreadyHandled": "Undangan ini sudah {status, select, accepted {diterima} rejected {ditolak} other {ditutup}}.",
   "goToApp": "Buka aplikasi",
   "alreadyMember": "Anda sudah menjadi anggota proyek ini, jadi tidak ada yang perlu diterima.",
   "goToProject": "Buka proyek",
@@ -36,7 +36,18 @@
   "switchToRegister": "Buat akun",
   "existingAccountNotice": "Email ini sudah memiliki akun. Masuk dengan kata sandi Anda.",
   "passwordsDoNotMatch": "Kata sandi tidak cocok.",
-  "genericError": "Terjadi kesalahan. Silakan coba lagi.",
   "registerFailed": "Tidak dapat membuat akun Anda.",
-  "signInFailed": "Gagal masuk."
+  "signInFailed": "Gagal masuk.",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

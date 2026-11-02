@@ -58,7 +58,7 @@ function fullMatrix(catalog: PermissionCatalog): Permissions {
 
 // What a project membership resolves to, read from the team's roles rather than
 // carried on every member: an owner gets everything, anyone else the matrix of the
-// role they hold, or of the team's default role when they carry none. Undefined
+// role they hold, or of the default role when they carry none. Undefined
 // while the catalog or the roles are still loading, which renders as a skeleton.
 export function membershipPermissions(
   catalog: PermissionCatalog | undefined,
@@ -84,7 +84,10 @@ const GROUP_DEFS: PermissionGroup[] = [
   { key: 'dashboards', resources: ['dashboards'] },
   { key: 'documents', resources: ['documents'] },
   { key: 'notes', resources: ['note_boards'] },
-  { key: 'ai', resources: ['ai_agents', 'integrations', 'agent_skills', 'agent_tools'] },
+  {
+    key: 'ai',
+    resources: ['ai_agents', 'integrations', 'agent_skills', 'agent_tools', 'agent_usage'],
+  },
   {
     key: 'configuration',
     resources: [

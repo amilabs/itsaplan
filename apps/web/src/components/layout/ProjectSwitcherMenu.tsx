@@ -1,34 +1,43 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import type { Project } from '@/lib/api/endpoints/projects';
 import type { Team } from '@/lib/api/endpoints/teams';
+import type { WorkspaceSummary } from '@/lib/api/endpoints/workspaces';
 import { useSidebarSide } from '@/hooks/useSidebarSide';
 import ResizeGrip from '@/components/common/ResizeGrip';
 import { PopoverContent } from '@/components/ui/popover';
 import { useSidebar } from '@/components/ui/sidebar';
+import type { ProjectSwitcherScope } from './ProjectSwitcher';
 import ProjectSwitcherList from './ProjectSwitcherList';
-import ProjectSwitcherFooter from './ProjectSwitcherFooter';
+import ProjectSwitcherNav from './ProjectSwitcherNav';
 import {
   PROJECT_PICKER_WIDTH,
   type useProjectSwitcherPreferences,
 } from './hooks/useProjectSwitcherPreferences';
 
 export default function ProjectSwitcherMenu({
-  projects,
+  workspaces,
+  workspace,
   teams,
-  current,
+  currentTeam,
+  scope,
+  onScopeChange,
+  onPickWorkspace,
+  currentProjectKey,
+  recentIds,
   preferences,
-  openTeams,
-  onOpenTeam,
   onSelectProject,
   onClose,
 }: {
-  projects: Project[];
+  workspaces: WorkspaceSummary[];
+  workspace?: WorkspaceSummary;
   teams: Team[];
-  current?: Project;
+  currentTeam?: Team;
+  scope: ProjectSwitcherScope;
+  onScopeChange: (scope: ProjectSwitcherScope) => void;
+  onPickWorkspace: (workspaceId: number) => void;
+  currentProjectKey: string | null;
+  recentIds: number[];
   preferences: ReturnType<typeof useProjectSwitcherPreferences>;
-  openTeams: Record<number, boolean>;
-  onOpenTeam: (teamId: number, open: boolean) => void;
   onSelectProject: (key: string) => void;
   onClose: () => void;
 }) {
@@ -38,14 +47,13 @@ export default function ProjectSwitcherMenu({
   const contentRef = useRef<HTMLDivElement>(null);
   const resizeStart = useRef(preferences.width);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [showHidden, setShowHidden] = useState(false);
   const side = sidebarSide === 'left' ? 'right' : 'left';
 
   return (
     <PopoverContent
       ref={contentRef}
       aria-label={t('projects')}
-      className="group/picker flex max-h-[min(720px,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-lg p-0"
+      className="group/picker flex h-[min(600px,var(--radix-popover-content-available-height))] flex-col overflow-hidden rounded-lg p-0 md:flex-row"
       style={{
         width: preferences.width,
         maxWidth: 'min(calc(100vw - 16px), var(--radix-popover-content-available-width))',
@@ -63,20 +71,27 @@ export default function ProjectSwitcherMenu({
         else inputRef.current?.focus();
       }}
     >
-      <ProjectSwitcherList
-        projects={projects}
+      <ProjectSwitcherNav
+        workspaces={workspaces}
+        workspace={workspace}
         teams={teams}
-        current={current}
+        currentTeam={currentTeam}
+        scope={scope}
+        onScopeChange={onScopeChange}
+        onPickWorkspace={onPickWorkspace}
+        onClose={onClose}
+      />
+      <ProjectSwitcherList
+        workspace={workspace}
+        teams={teams}
+        scope={scope}
+        currentProjectKey={currentProjectKey}
+        recentIds={recentIds}
         sort={preferences.sort}
         onSortChange={preferences.setSort}
-        showHidden={showHidden}
-        onShowHiddenChange={setShowHidden}
-        openTeams={openTeams}
-        onOpenTeam={onOpenTeam}
         onSelectProject={onSelectProject}
         inputRef={inputRef}
       />
-      <ProjectSwitcherFooter isMobile={isMobile} onClose={onClose} />
       {!isMobile && (
         <ResizeGrip
           label={t('projectPicker.resize')}

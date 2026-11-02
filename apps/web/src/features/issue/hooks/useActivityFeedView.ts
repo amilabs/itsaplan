@@ -6,15 +6,16 @@ import {
 } from '@/services/preferences.service';
 import type { FeedSlice } from '../services/comments.service';
 
-export type ActivityTab = 'all' | FeedFilter;
+export type ActivityTab = 'all' | 'agentRuns' | FeedFilter;
 
-const TABS: ActivityTab[] = ['all', 'comments', 'history', 'worklog'];
+const TABS: ActivityTab[] = ['all', 'comments', 'history', 'worklog', 'agentRuns'];
 const TAB_KEY = 'issue-activity-tab';
 const ORDER_KEY = 'issue-activity-order';
 
 // How the activity log of every issue is shown: the tab and the order are the last
 // ones picked in this browser, and grouping by status is the account preference, so
-// switching it here changes it on the preferences page too.
+// switching it here changes it on the preferences page too. showAll does not save the
+// tab, so following a link to a comment keeps the saved one.
 //
 // The stored values are read in an effect, not in the state initializer: the
 // initializer also runs during the server render, where there is no localStorage.
@@ -43,6 +44,8 @@ export function useActivityFeedView() {
     setStored((prev) => prev && { ...prev, order });
   }, []);
 
+  const showAll = useCallback(() => setStored((prev) => prev && { ...prev, tab: 'all' }), []);
+
   const setGrouped = useCallback(
     (grouped: boolean) => mutate({ issueActivityView: grouped ? 'grouped' : 'flat' }),
     [mutate],
@@ -50,7 +53,7 @@ export function useActivityFeedView() {
 
   const tab = stored?.tab ?? 'all';
   const order = stored?.order ?? 'desc';
-  const slice: FeedSlice = { filter: tab === 'all' ? null : tab, order };
+  const slice: FeedSlice = { filter: tab === 'all' || tab === 'agentRuns' ? null : tab, order };
   return {
     ready: stored != null && preference != null,
     tab,
@@ -60,6 +63,7 @@ export function useActivityFeedView() {
     setTab,
     setOrder,
     setGrouped,
+    showAll,
   };
 }
 

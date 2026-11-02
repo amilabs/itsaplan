@@ -1,6 +1,7 @@
 import type { CycleStatus } from '@/lib/api/endpoints/cycles';
 import type { InitiativeStatus } from '@/lib/api/endpoints/initiatives';
 import { request } from '@/lib/api/core/client';
+import type { AgentRunTrigger } from '@/lib/api/endpoints/agents';
 import type { Checklist } from '@/lib/api/endpoints/checklists';
 import type { CustomFieldType } from '@/lib/api/endpoints/customFields';
 import type { DevelopmentLink } from '@/lib/api/endpoints/git';
@@ -94,6 +95,14 @@ export interface IssueSearchHit {
   dueDate: string | null;
   labelIds: number[];
   archived: boolean;
+}
+
+export interface CrossProjectIssueHit extends IssueSearchHit {
+  projectId: number;
+  projectRef: string;
+  projectKey: string;
+  projectName: string;
+  teamName: string;
 }
 
 export interface IssueFieldValue {
@@ -310,6 +319,14 @@ export const listIssueCycles = (id: number) => request<IssueCycleEntry[]>(`/issu
 export const updateIssue = (id: number, patch: IssuePatch) =>
   request<Issue>(`/issues/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 
+// Moves the issue, with its subtasks, to another project of the same team. Left
+// without a column, the server picks the one of the same name or state type.
+export const moveIssue = (id: number, projectId: number, columnId?: number) =>
+  request<Issue>(`/issues/${id}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, columnId }),
+  });
+
 // An issue that has subtasks needs a disposition saying what happens to them;
 // without one the server rejects the delete with a 409.
 export const deleteIssue = (id: number, subtasks?: SubtaskDisposition) =>
@@ -369,6 +386,19 @@ export const searchIssues = (projectKey: string, params: { q?: string; limit?: n
   return request<IssueSearchHit[]>(`/projects/${projectKey}/issues/search?${qs.toString()}`);
 };
 
+export const searchAllIssues = (params: {
+  q: string;
+  limit?: number;
+  perProjectLimit?: number;
+  excludeProjectId?: number;
+}) => {
+  const qs = new URLSearchParams({ q: params.q });
+  if (params.limit != null) qs.set('limit', String(params.limit));
+  if (params.perProjectLimit != null) qs.set('perProjectLimit', String(params.perProjectLimit));
+  if (params.excludeProjectId != null) qs.set('excludeProjectId', String(params.excludeProjectId));
+  return request<CrossProjectIssueHit[]>(`/issues/search?${qs.toString()}`);
+};
+
 // Relations between issues. The relation reads from the issue in the path: it
 // blocks / relates to / duplicates targetIssueId. Both ends show it.
 export const linkIssues = (issueId: number, targetIssueId: number, kind: IssueLinkInputKind) =>
@@ -400,3 +430,53 @@ export const setFieldValue = (issueId: number, fieldId: number, input: IssueFiel
     method: 'PUT',
     body: JSON.stringify(input),
   });
+
+export interface IssueAgentRun {
+  id: number;
+  agentId: number;
+  username: string;
+  kind: 'internal' | 'external';
+  status: 'pending' | 'success' | 'failed' | 'canceled';
+  executionState: 'queued' | 'running' | 'success' | 'failed' | 'canceled';
+  trigger: AgentRunTrigger;
+  prompt: string;
+  output: string | null;
+  attempts: number;
+  lastError: string | null;
+  contextTokens?: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  nextAttemptAt: string;
+}
+
+export interface IssueAgentTraceSpan {
+  spanId: string;
+  parentSpanId: string | null;
+  name: string;
+  type: string;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  input: unknown;
+  output: unknown;
+  error: unknown;
+  attributes: unknown;
+}
+
+export interface IssueAgentRunTrace {
+  previousTraceId: string | null;
+  trace: { traceId: string; status: string; startedAt: string; endedAt: string | null };
+  spans: IssueAgentTraceSpan[];
+}
+
+export const listIssueAgentRuns = (issueId: number, before?: number) =>
+  request<{ items: IssueAgentRun[]; nextCursor: number | null }>(
+    `/issues/${issueId}/agent-runs${before == null ? '' : `?before=${before}`}`,
+  );
+
+export const getIssueAgentRunTrace = (issueId: number, runId: number, traceId?: string) =>
+  request<IssueAgentRunTrace | null>(
+    `/issues/${issueId}/agent-runs/${runId}/trace${traceId == null ? '' : `?traceId=${encodeURIComponent(traceId)}`}`,
+  );

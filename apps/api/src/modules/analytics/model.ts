@@ -1,5 +1,7 @@
 import { t } from 'elysia';
 import { ActivityPayloadResponse } from '#shared/activity';
+import { agentRunTrigger } from '#modules/agents/model';
+import { instantQuery } from '#shared/schemas';
 
 export const StatsDto = t.Object({
   open: t.Number(),
@@ -77,13 +79,7 @@ export const ActivityPage = t.Object({
 const AgentRunFeedItem = t.Object({
   id: t.Number(),
   status: t.String(),
-  trigger: t.Union([
-    t.Literal('mention'),
-    t.Literal('delegation'),
-    t.Literal('field'),
-    t.Literal('schedule'),
-    t.Literal('manual'),
-  ]),
+  trigger: agentRunTrigger,
   agentId: t.Number(),
   agentName: t.String(),
   issueId: t.Nullable(t.Number()),
@@ -153,10 +149,16 @@ export const burnupQuery = t.Object({
 });
 
 export const activityQuery = t.Object({
-  limit: t.Optional(t.Numeric()),
-  cursor: t.Optional(t.String()),
+  limit: t.Optional(t.Numeric({ description: 'Max entries (1-100). Default 25.' })),
+  cursor: t.Optional(
+    t.String({ description: 'nextCursor of the previous page, as a JSON string.' }),
+  ),
   actorUserId: t.Optional(t.String()),
-  action: t.Optional(t.String()),
+  action: t.Optional(
+    t.String({ description: "Change-log action, such as 'created' or 'status'." }),
+  ),
+  from: instantQuery('Inclusive earliest entry time.'),
+  to: instantQuery('Exclusive latest entry time.'),
   // Comma-separated issue ids the client resolved from the widget's work items
   // filter; absent means no issue-scope restriction.
   issueIds: t.Optional(t.String()),

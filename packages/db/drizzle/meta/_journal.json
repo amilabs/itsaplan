@@ -946,6 +946,258 @@
       "when": 1790334902773,
       "tag": "0134_team_scoped_project_key",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1790588370989,
+      "tag": "0135_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1790949641324,
+      "tag": "0136_workspace_sso_scim",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791052601298,
+      "tag": "0137_workspace_scim_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791054435099,
+      "tag": "0138_oauth_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1791064765087,
+      "tag": "0139_project_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1791138774176,
+      "tag": "0140_account_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1791145933934,
+      "tag": "0141_workspace_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1791308757273,
+      "tag": "0142_issue_key_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1791374220064,
+      "tag": "0143_import_job_linear_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1791379870030,
+      "tag": "0144_agent_schedule_status_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1791404364263,
+      "tag": "0145_agent_reasoning_effort",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1791476126995,
+      "tag": "0146_agent_schedule_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1791744496755,
+      "tag": "0147_model_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1791907056751,
+      "tag": "0148_drop_mcp_oauth_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1791907060303,
+      "tag": "0149_oauth_provider_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1792098421237,
+      "tag": "0150_workspace_per_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1792447270678,
+      "tag": "0151_agent_invocation_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1792496405688,
+      "tag": "0152_agent_execution_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792496411346,
+      "tag": "0153_external_run_traces",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792522419470,
+      "tag": "0154_agent_run_timeout",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792536807276,
+      "tag": "0155_kimi_code_plan_provider",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792788993549,
+      "tag": "0156_agent_tool_keyless",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1792948521460,
+      "tag": "0157_document_mentions",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1793058294770,
+      "tag": "0158_trello_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1793194811096,
+      "tag": "0159_system_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1793196902562,
+      "tag": "0160_system_member_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1793198488881,
+      "tag": "0161_system_default_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1793204184815,
+      "tag": "0162_system_member_config_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1793211028915,
+      "tag": "0163_workspace_max_concurrent_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1793220634451,
+      "tag": "0164_agent_run_claimed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1793232167646,
+      "tag": "0165_issue_link_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1793305025083,
+      "tag": "0166_agent_chat_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1793317662313,
+      "tag": "0167_private_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1793317804099,
+      "tag": "0168_view_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1793390367322,
+      "tag": "0169_project_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1793532812084,
+      "tag": "0170_user_last_seen",
+      "breakpoints": true
     }
   ]
 }

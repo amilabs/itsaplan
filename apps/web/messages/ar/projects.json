@@ -1,8 +1,19 @@
 {
   "editAction": "تعديل المشروع",
   "copyAction": "نسخ المشروع",
+  "saveTemplateAction": "حفظ كقالب",
+  "saveTemplate": {
+    "title": "حفظ \"{name}\" كقالب",
+    "hint": "يحتفظ القالب بنسخة من الإعدادات المختارة. لا تغيّره التعديلات اللاحقة على المشروع. لا تُحفظ المستندات والوكلاء والجدولات وخطافات الويب.",
+    "save": "حفظ القالب",
+    "saved": "تم حفظ القالب \"{name}\""
+  },
   "deleteAction": "حذف المشروع",
   "leaveAction": "مغادرة المشروع",
+  "archiveAction": "أرشفة المشروع",
+  "restoreAction": "استعادة المشروع",
+  "archived": "تمت أرشفة {name}",
+  "restored": "تمت استعادة {name}",
   "deleteDialog": {
     "title": "حذف {name}؟",
     "confirm": "حذف نهائي",

@@ -1,3 +1,5 @@
+import { db, project, projectMember, team, teamRole } from '@repo/db';
+import { and, eq, inArray, isNull, type SQLWrapper } from 'drizzle-orm';
 import { HttpError } from './lib';
 import {
   getProjectById,
@@ -6,14 +8,41 @@ import {
   type ProjectRow,
 } from '#modules/projects/service';
 import { featureLabel, type ProjectFeature } from './features';
-import { getMembership, getMemberContext, getTeamPermissions } from '#modules/members/service';
+import {
+  getMemberContext,
+  getProjectPermissions,
+  getTeamPermissions,
+  toMemberContext,
+  type MemberRole,
+} from '#modules/members/service';
 import { getTeamMembership, runsTeam, type TeamStanding } from '#modules/teams/service';
-import { hasPermission, type PermissionAction, type PermissionResource } from './permissions';
+import {
+  projectWorkspaceGrant,
+  workspaceGrant,
+  workspaceGrants,
+} from '#modules/workspaces/service';
+import {
+  hasPermission,
+  emptyPermissions,
+  resourceActions,
+  PERMISSION_RESOURCES,
+  type PermissionAction,
+  type PermissionResource,
+  type Permissions,
+} from './permissions';
+import {
+  mergePermissions,
+  projectAccess,
+  teamAccess,
+  type ProjectAccess,
+  type TeamAccess,
+  type WorkspaceGrant,
+} from './workspace-roles';
 
 // The authenticated user carried on the request context. Populated by the
 // session guard in planner.ts from the better-auth session. Access checks only
 // need the id; role is the global better-auth role ("god" | "user") and is not
-// used for project access (access is strictly by project membership).
+// used for project access (that is membership and the role in the workspace).
 export interface AuthUser {
   id: string;
   email?: string | null;
@@ -30,13 +59,34 @@ export function requireUser(user: AuthUser | undefined | null): AuthUser {
 }
 
 // Asserts the session belongs to the instance owner ("god"), the role the first
-// registered user gets. It gates instance-wide administration (god mode) only —
-// project access stays strictly by membership, so this never bypasses a project
-// permission check.
+// registered user gets. It gates instance-wide administration (god mode) only and
+// never bypasses a project permission check.
 export function requireGod(user: AuthUser | undefined | null): AuthUser {
   const current = requireUser(user);
   if (current.role !== 'god') throw new HttpError(403, 'Instance administration is owner-only');
   return current;
+}
+
+// What the person holds in a project: their membership, raised to what their role in
+// the workspace grants (see workspace-roles.ts). Every access check below reads it.
+export async function getProjectAccess(
+  projectId: number,
+  userId: string,
+): Promise<ProjectAccess | null> {
+  const [member, grant] = await Promise.all([
+    getMemberContext(projectId, userId),
+    projectWorkspaceGrant(projectId, userId),
+  ]);
+  return projectAccess(member, grant);
+}
+
+// The same for a team: their standing in it, raised to the workspace grant.
+export async function getTeamAccess(teamId: number, userId: string): Promise<TeamAccess | null> {
+  const [standing, grant] = await Promise.all([
+    getTeamMembership(teamId, userId),
+    workspaceGrant(teamId, userId),
+  ]);
+  return teamAccess(standing, grant);
 }
 
 // Resolves the :projectKey path param (see getProjectByRef), throwing 404 for an
@@ -48,7 +98,7 @@ async function requireProject(projectKey: string, userId: string): Promise<Proje
 }
 
 // Resolves the :projectKey path param to a project the user may access. Throws
-// 404 for an unknown project and 403 when the user is not a member. Wrapped by
+// 404 for an unknown project and 403 when the user has no access to it. Wrapped by
 // the projectMember and projectOwner guards.
 export async function requireProjectAccess(
   projectKey: string,
@@ -56,24 +106,22 @@ export async function requireProjectAccess(
 ): Promise<ProjectRow> {
   const current = requireUser(user);
   const project = await requireProject(projectKey, current.id);
-  const role = await getMembership(project.id, current.id);
-  if (!role) throw new HttpError(403, 'You do not have access to this project');
+  if (!(await getProjectAccess(project.id, current.id))) {
+    throw new HttpError(403, 'You do not have access to this project');
+  }
   return project;
 }
 
 // Resolves the :projectKey path param to a project and asserts the user is an
-// owner, in a single membership lookup. Wrapped by the projectOwner guard, used
-// for role and member management. Throws 404 for an unknown project, and 403 for
-// a non-member or a member who is not an owner.
+// owner of it. Wrapped by the projectOwner guard, used for role and member
+// management. Throws 404 for an unknown project, and 403 for anyone else.
 export async function requireProjectOwner(
   projectKey: string,
   user: AuthUser | undefined | null,
 ): Promise<ProjectRow> {
   const current = requireUser(user);
   const project = await requireProject(projectKey, current.id);
-  const role = await getMembership(project.id, current.id);
-  if (!role) throw new HttpError(403, 'You do not have access to this project');
-  if (role !== 'owner') throw new HttpError(403, 'Only a project owner can do this');
+  await assertProjectOwner(project.id, current);
   return project;
 }
 
@@ -101,9 +149,45 @@ export async function assertProjectAdmin(
   user: AuthUser | undefined | null,
 ): Promise<void> {
   const current = requireUser(user);
-  if ((await getMembership(project.id, current.id)) === 'owner') return;
-  if (runsTeam(await getTeamMembership(project.teamId, current.id))) return;
+  if ((await getProjectAccess(project.id, current.id))?.role === 'owner') return;
+  if (runsTeam((await getTeamAccess(project.teamId, current.id))?.role ?? null)) return;
   throw new HttpError(403, 'Only a project owner or a team owner or manager can do this');
+}
+
+// Caps what a member may hand out: the permissions of a role they assign (adding a
+// member, changing a role, inviting, renewing an invite, or copying an invite's link)
+// must not exceed their own. Without this, anyone
+// the member permission lets assign roles could grant a role more powerful than
+// theirs and act through it. A project owner, or an owner or manager of the team
+// (a workspace grant included), bypasses the matrix and may grant any of the team's roles.
+export async function mayGrantPermissions(
+  project: ProjectRow,
+  user: AuthUser | undefined | null,
+  target: Permissions,
+): Promise<boolean> {
+  const current = requireUser(user);
+  if (runsTeam((await getTeamAccess(project.teamId, current.id))?.role ?? null)) return true;
+  const access = await getProjectAccess(project.id, current.id);
+  if (access?.role === 'owner') return true;
+  const granter = access?.permissions ?? emptyPermissions();
+  for (const resource of PERMISSION_RESOURCES) {
+    for (const action of resourceActions(resource)) {
+      if (hasPermission(target, resource, action) && !hasPermission(granter, resource, action)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+export async function assertGrantablePermissions(
+  project: ProjectRow,
+  user: AuthUser | undefined | null,
+  target: Permissions,
+): Promise<void> {
+  if (!(await mayGrantPermissions(project, user, target))) {
+    throw new HttpError(403, 'You cannot grant a role with more permissions than your own');
+  }
 }
 
 // Resolves the :projectKey path param to a project the caller's team runs: an owner
@@ -118,7 +202,7 @@ export async function requireTeamRunsProject(
 ): Promise<ProjectRow> {
   const current = requireUser(user);
   const project = await requireProject(projectKey, current.id);
-  if (!runsTeam(await getTeamMembership(project.teamId, current.id)))
+  if (!runsTeam((await getTeamAccess(project.teamId, current.id))?.role ?? null))
     throw new HttpError(403, 'Only a team owner or manager can do this');
   return project;
 }
@@ -135,10 +219,20 @@ export async function requireMemberAdmin(
 ): Promise<ProjectRow> {
   const current = requireUser(user);
   const project = await requireProject(projectKey, current.id);
-  const standing = await getTeamMembership(project.teamId, current.id);
-  if (runsTeam(standing)) return project;
+  if (runsTeam((await getTeamAccess(project.teamId, current.id))?.role ?? null)) return project;
   await assertPermission(project.id, current, resource, action);
   return project;
+}
+
+// Whether the user passes requireMemberAdmin, without throwing.
+export async function checkMemberAdmin(
+  project: ProjectRow,
+  user: AuthUser,
+  resource: PermissionResource,
+  action: PermissionAction,
+): Promise<boolean> {
+  if (runsTeam((await getTeamAccess(project.teamId, user.id))?.role ?? null)) return true;
+  return checkPermission(project.id, user, resource, action);
 }
 
 // Resolves the :projectKey path param for a route acting on one member's own row.
@@ -185,14 +279,28 @@ export async function assertProjectFeature(
   if (project) assertFeatureEnabled(project, feature);
 }
 
+// An archived project is read-only until it is restored: only a GET or HEAD passes.
+export function assertWritable(project: ProjectRow, method: string): void {
+  if (project.archivedAt && method !== 'GET' && method !== 'HEAD') {
+    throw new HttpError(403, 'This project is archived; restore it to make changes');
+  }
+}
+
+// The same check for a caller that resolved only the project's id.
+export async function assertProjectWritable(projectId: number, method: string): Promise<void> {
+  if (method === 'GET' || method === 'HEAD') return;
+  const project = await getProjectById(projectId);
+  if (project) assertWritable(project, method);
+}
+
 // Formats a resource key for an error message: "custom_fields" -> "custom fields".
 function resourceLabel(resource: PermissionResource): string {
   return resource.replace(/_/g, ' ');
 }
 
-// Asserts the user is a member of the project and their role grants the given
-// action on the given resource. Owners bypass the matrix (always allowed).
-// Throws 403 for a non-member or a member whose role lacks the permission. The
+// Asserts the user has access to the project and it grants the given action on the
+// given resource. Owners bypass the matrix (always allowed). Throws 403 for anyone
+// without access and for access that lacks the permission. The
 // underlying permission check behind the permission guard and the feature-local
 // entity guards.
 export async function assertPermission(
@@ -202,7 +310,7 @@ export async function assertPermission(
   action: PermissionAction,
 ): Promise<void> {
   const current = requireUser(user);
-  const ctx = await getMemberContext(projectId, current.id);
+  const ctx = await getProjectAccess(projectId, current.id);
   if (!ctx) throw new HttpError(403, 'You do not have access to this project');
   if (ctx.role === 'owner') return;
   if (!hasPermission(ctx.permissions, resource, action)) {
@@ -218,9 +326,9 @@ export async function assertProjectOwner(
   user: AuthUser | undefined | null,
 ): Promise<void> {
   const current = requireUser(user);
-  const role = await getMembership(projectId, current.id);
-  if (!role) throw new HttpError(403, 'You do not have access to this project');
-  if (role !== 'owner') throw new HttpError(403, 'Only a project owner can do this');
+  const access = await getProjectAccess(projectId, current.id);
+  if (!access) throw new HttpError(403, 'You do not have access to this project');
+  if (access.role !== 'owner') throw new HttpError(403, 'Only a project owner can do this');
 }
 
 // Whether the user may perform the action, without throwing. For field-level
@@ -233,7 +341,7 @@ export async function checkPermission(
   action: PermissionAction,
 ): Promise<boolean> {
   if (!user) return false;
-  const ctx = await getMemberContext(projectId, user.id);
+  const ctx = await getProjectAccess(projectId, user.id);
   if (!ctx) return false;
   return ctx.role === 'owner' || hasPermission(ctx.permissions, resource, action);
 }
@@ -253,15 +361,16 @@ export async function requireProjectPermission(
   return project;
 }
 
-// The caller's standing in the team a :teamId route addresses.
+// The caller's standing in the team a :teamId route addresses, raised to the workspace
+// grant (getTeamAccess).
 export interface TeamMembership {
   teamId: number;
   role: TeamStanding;
   userId: string;
 }
 
-// Resolves the :teamId path param to the caller's membership in it. 404 for an
-// unknown team and for one the caller is not a member of: a team the caller cannot
+// Resolves the :teamId path param to the caller's standing in it. 404 for an
+// unknown team and for one the caller has no access to: a team the caller cannot
 // see should not be distinguishable from one that does not exist. Wrapped by the
 // team guards.
 export async function requireTeamMembership(
@@ -269,9 +378,9 @@ export async function requireTeamMembership(
   user: AuthUser | undefined | null,
 ): Promise<TeamMembership> {
   const current = requireUser(user);
-  const role = await getTeamMembership(teamId, current.id);
-  if (!role) throw new HttpError(404, 'Team not found');
-  return { teamId, role, userId: current.id };
+  const access = await getTeamAccess(teamId, current.id);
+  if (!access) throw new HttpError(404, 'Team not found');
+  return { teamId, role: access.role, userId: current.id };
 }
 
 // Asserts the caller may perform the action on a resource the team owns and every
@@ -286,11 +395,95 @@ export async function requireTeamPermission(
   resource: PermissionResource,
   action: PermissionAction,
 ): Promise<TeamMembership> {
-  const membership = await requireTeamMembership(teamId, user);
-  if (runsTeam(membership.role)) return membership;
-  const permissions = await getTeamPermissions(teamId, membership.userId);
+  const current = requireUser(user);
+  const access = await getTeamAccess(teamId, current.id);
+  if (!access) throw new HttpError(404, 'Team not found');
+  const membership = { teamId, role: access.role, userId: current.id };
+  if (runsTeam(access.role)) return membership;
+  const permissions = mergePermissions(await getTeamPermissions(teamId, current.id), access.grant);
   if (!hasPermission(permissions, resource, action)) {
     throw new HttpError(403, `You do not have permission to ${action} ${resourceLabel(resource)}`);
   }
   return membership;
+}
+
+// The projects of the team where the member holds the permission, for a team-wide read
+// that shows each member only those. Null is every project: whoever runs the team, or
+// holds the permission through their role in the workspace.
+export async function projectsWithPermission(
+  membership: TeamMembership,
+  resource: PermissionResource,
+  action: PermissionAction,
+): Promise<number[] | null> {
+  if (runsTeam(membership.role)) return null;
+  const access = await getTeamAccess(membership.teamId, membership.userId);
+  if (access?.grant && hasPermission(access.grant, resource, action)) return null;
+  const projects = await getProjectPermissions(membership.teamId, membership.userId);
+  return projects
+    .filter((entry) => hasPermission(entry.permissions, resource, action))
+    .map((entry) => entry.projectId);
+}
+
+// The ids of the projects the user is a member of or reaches through a workspace role,
+// as a subquery. It starts from the user's own memberships and the granted teams, so it
+// reads indexes rather than every project of the instance.
+export function reachedProjectIds(userId: string, grantedTeams: number[]): SQLWrapper {
+  const member = db
+    .select({ id: projectMember.projectId })
+    .from(projectMember)
+    .where(eq(projectMember.userId, userId));
+  if (grantedTeams.length === 0) return member;
+  return member.union(
+    db
+      .select({ id: project.id })
+      .from(project)
+      .where(and(inArray(project.teamId, grantedTeams), eq(project.isTemplate, false))),
+  );
+}
+
+// Every project the user reaches, as a member or through their workspace role, where
+// their access holds each permission. mcpOnly keeps the projects open to MCP clients.
+// A caller that already read the user's workspace grants passes them.
+export async function readableProjectIds(
+  userId: string,
+  required: [PermissionResource, PermissionAction][],
+  opts: {
+    mcpOnly?: boolean;
+    includeArchived?: boolean;
+    grants?: Map<number, WorkspaceGrant>;
+  } = {},
+): Promise<number[]> {
+  const grants = opts.grants ?? (await workspaceGrants(userId));
+  const rows = await db
+    .select({
+      id: project.id,
+      teamId: project.teamId,
+      role: projectMember.role,
+      permissions: teamRole.permissions,
+    })
+    .from(project)
+    .innerJoin(team, eq(team.id, project.teamId))
+    .leftJoin(
+      projectMember,
+      and(eq(projectMember.projectId, project.id), eq(projectMember.userId, userId)),
+    )
+    .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
+    .where(
+      and(
+        opts.includeArchived ? undefined : isNull(project.archivedAt),
+        opts.mcpOnly ? and(eq(project.mcpEnabled, true), eq(team.mcpEnabled, true)) : undefined,
+        inArray(project.id, reachedProjectIds(userId, [...grants.keys()])),
+      ),
+    );
+  return rows
+    .filter((row) => {
+      const member = row.role ? toMemberContext(row.role as MemberRole, row.permissions) : null;
+      const access = projectAccess(member, grants.get(row.teamId) ?? null);
+      return (
+        access &&
+        required.every(([resource, action]) => hasPermission(access.permissions, resource, action))
+      );
+    })
+    .map((row) => row.id)
+    .sort((a, b) => a - b);
 }

@@ -1,6 +1,7 @@
 import { t } from 'elysia';
 
-import { agentRunTrigger, runContextTokens } from '../model';
+import { pageQueryFields, pageResponse } from '#shared/pagination';
+import { agentRunTrigger, agentExecutionState, runContextTokens } from '../model';
 
 export { agentParams, projectAgentParams } from '../model';
 
@@ -27,6 +28,9 @@ const username = t.String({
   pattern: '^[a-zA-Z0-9._-]+$',
   description: 'Mention handle (letters, digits, . _ -).',
 });
+
+// The reasoning effort levels the provider SDKs share (see runtime/index.ts).
+const reasoningEffort = t.Union([t.Literal('low'), t.Literal('medium'), t.Literal('high')]);
 
 // Internal-agent model configuration, all optional so a config can be filled in
 // over time. Ignored (stored as null/empty) for an external agent.
@@ -57,7 +61,23 @@ const configFields = {
     }),
   ),
   temperature: t.Optional(t.Nullable(t.Number({ description: 'Sampling temperature.' }))),
+  reasoningEffort: t.Optional(
+    t.Nullable(reasoningEffort, {
+      description:
+        "How much a reasoning model thinks before it answers. Null leaves it to the provider's " +
+        'default.',
+    }),
+  ),
   maxSteps: t.Optional(t.Nullable(t.Integer({ description: 'Max tool-call steps per run.' }))),
+  runTimeoutSec: t.Optional(
+    t.Nullable(
+      t.Integer({
+        minimum: 1,
+        description:
+          "Seconds one run may take before it is stopped and saved as failed. Null uses the instance's maximum, which also caps this value.",
+      }),
+    ),
+  ),
   memoryEnabled: t.Optional(
     t.Boolean({ description: 'Keep conversation memory across a thread.' }),
   ),
@@ -66,6 +86,14 @@ const configFields = {
   ),
   triggerOnMention: t.Optional(t.Boolean({ description: 'Run when @-mentioned in a comment.' })),
   triggerOnAssign: t.Optional(t.Boolean({ description: 'Run when assigned to an issue.' })),
+  chatEnabled: t.Optional(
+    t.Boolean({
+      description:
+        'Whether the agent may be chatted with (the chat selector and the chat routes). ' +
+        'Off, it keeps running through a mention, a delegation, or a schedule. Defaults ' +
+        'to true.',
+    }),
+  ),
   fieldTriggers: t.Optional(
     t.Array(
       t.Object({
@@ -91,7 +119,7 @@ const configFields = {
       description:
         'Projects of the team the agent works in, from list_projects. Replaces the set: a ' +
         'project left out is detached. A project of another team is rejected. The agent ' +
-        "joins on the team's default role; set_member_role changes it per project.",
+        'joins on the default role; set_member_role changes it per project.',
     }),
   ),
   runnerScope: t.Optional(
@@ -100,6 +128,18 @@ const configFields = {
         "Which runs an external agent's runner receives: 'owner' only the creator's, " +
         "'team' any member's.",
     }),
+  ),
+  invocationUrl: t.Optional(
+    t.Nullable(
+      t.String({
+        minLength: 1,
+        maxLength: 2048,
+        description:
+          "HTTPS URL an external agent's runs and chat messages are POSTed to, signed with " +
+          'its invocation secret, instead of being claimed by a runner. Null puts the agent ' +
+          'back on a runner. Ignored for an internal agent.',
+      }),
+    ),
   ),
 };
 
@@ -122,22 +162,33 @@ export const AiAgentResponse = t.Object({
   instructions: t.Nullable(t.String()),
   tools: t.Array(t.String()),
   temperature: t.Nullable(t.Number()),
+  reasoningEffort: t.Nullable(reasoningEffort),
   maxSteps: t.Nullable(t.Number()),
+  runTimeoutSec: t.Nullable(t.Number()),
   memoryEnabled: t.Boolean(),
   memoryLastMessages: t.Nullable(t.Number()),
   triggerOnMention: t.Boolean(),
   triggerOnAssign: t.Boolean(),
+  chatEnabled: t.Boolean(),
   fieldTriggers: t.Array(t.Object({ fieldId: t.Number(), name: t.String(), delaySec: t.Number() })),
   delegationDelaySec: t.Number(),
   ownerUserId: t.Nullable(t.String()),
   runnerScope: t.Union([t.Literal('owner'), t.Literal('team')]),
   lastSeenAt: t.Nullable(t.String()),
+  invocationUrl: t.Nullable(t.String()),
   createdAt: t.String(),
   apiKeyStart: t.Nullable(t.String()),
   modelProvider: t.Nullable(t.String()),
   actionCount: t.Number(),
   skillCount: t.Number(),
   toolCount: t.Number(),
+  canManage: t.Boolean({
+    description:
+      'Whether you may act on the agent as a whole: rotate its key, edit or delete it, set its ' +
+      'tools or skills, and read, rotate or test its invocation secret. Takes running the team ' +
+      'or being a member of every project the agent works in; each action also needs its role ' +
+      'permission.',
+  }),
 });
 
 // createAgent's result: the agent plus its one-time API key secret (null for an
@@ -160,10 +211,13 @@ export const RunAgentResponse = t.Object({
 export const AgentRunResponse = t.Object({
   id: t.Number(),
   status: t.String(),
+  executionState: agentExecutionState,
   trigger: agentRunTrigger,
   issueId: t.Nullable(t.Number()),
   issueIdentifier: t.Nullable(t.String()),
   issueTitle: t.Nullable(t.String()),
+  documentId: t.Nullable(t.Number()),
+  documentTitle: t.Nullable(t.String()),
   prompt: t.String(),
   attempts: t.Number(),
   lastError: t.Nullable(t.String()),
@@ -274,7 +328,7 @@ export const setAgentProjectsBody = t.Object({
   projectIds: t.Array(t.Integer(), {
     description:
       'Projects of the team the agent works in. Replaces the set: a project left out is ' +
-      "detached. The agent joins on the team's default role; set_member_role changes it per " +
+      'detached. The agent joins on the default role; set_member_role changes it per ' +
       'project.',
   }),
 });
@@ -304,5 +358,118 @@ export const threadListQuery = t.Object({
   ),
   favorites: t.Optional(
     t.Boolean({ description: 'Return the starred conversations instead of the page.' }),
+  ),
+});
+
+// The trace of one run of an internal agent (TraceSummary from runtime/traces).
+export const AgentTraceResponse = t.Object({
+  traceId: t.String(),
+  name: t.String(),
+  status: t.String({ description: "How the run ended: 'success', 'error' or 'running'." }),
+  startedAt: t.String(),
+  endedAt: t.Nullable(t.String()),
+  durationMs: t.Nullable(t.Number()),
+  projectId: t.Nullable(t.Number()),
+  runId: t.Nullable(
+    t.Number({
+      description:
+        'The queued run this traced, as listed by the run history. Null for a trace of the ' +
+        'chat, which is queued nowhere.',
+    }),
+  ),
+  trigger: t.Nullable(agentRunTrigger),
+  issueId: t.Nullable(t.Number()),
+});
+
+export const AgentTracePageResponse = pageResponse(AgentTraceResponse);
+
+// One step of a trace: the run itself, a model call, or a tool call (TraceSpan).
+export const AgentTraceSpanResponse = t.Object({
+  spanId: t.String(),
+  parentSpanId: t.Nullable(t.String()),
+  name: t.String(),
+  type: t.String({
+    description:
+      "Mastra's span type: 'agent_run' for the run, 'model_generation' and its " +
+      "'model_step' and 'model_inference' spans for the model, 'tool_call' for a tool.",
+  }),
+  status: t.String(),
+  startedAt: t.String(),
+  endedAt: t.Nullable(t.String()),
+  durationMs: t.Nullable(t.Number()),
+  input: t.Any(),
+  output: t.Any(),
+  error: t.Any(),
+  attributes: t.Any({
+    description:
+      'What the step itself reports: the model and its token counts for a model call, the ' +
+      'arguments for a tool call.',
+  }),
+});
+
+export const AgentTraceDetailResponse = t.Object({
+  trace: AgentTraceResponse,
+  spans: t.Array(AgentTraceSpanResponse),
+});
+
+export const tracesQuery = t.Object({
+  projectId: t.Optional(t.Numeric()),
+  ...pageQueryFields,
+});
+
+export const traceParams = t.Object({
+  teamId: t.Numeric(),
+  agentId: t.Numeric(),
+  traceId: t.String(),
+});
+
+// --- Agent analytics -------------------------------------------------------------
+
+// Cost is in USD, and null where the price table names no such provider and model —
+// the panel shows the tokens without an amount rather than a wrong one.
+const usageFields = {
+  inputTokens: t.Number(),
+  outputTokens: t.Number(),
+  cost: t.Nullable(t.Number()),
+};
+
+const totalsFields = { runs: t.Number(), errors: t.Number(), ...usageFields };
+
+const AgentAnalyticsTotals = t.Object(totalsFields);
+
+export const AgentAnalyticsResponse = t.Object({
+  from: t.String(),
+  to: t.String(),
+  totals: AgentAnalyticsTotals,
+  previous: AgentAnalyticsTotals,
+  models: t.Array(
+    t.Object({ provider: t.String(), model: t.String(), calls: t.Number(), ...usageFields }),
+  ),
+  agents: t.Array(t.Object({ agentId: t.Number(), name: t.String(), ...totalsFields })),
+  projects: t.Array(t.Object({ projectId: t.Number(), name: t.String(), ...totalsFields })),
+  teams: t.Array(t.Object({ teamId: t.Number(), name: t.String(), ...totalsFields })),
+  tokensPerDay: t.Array(t.Object({ day: t.String(), ...usageFields })),
+});
+
+export const TeamAgentAnalyticsResponse = t.Composite([
+  AgentAnalyticsResponse,
+  t.Object({
+    readableProjects: t.Array(t.Object({ projectId: t.Number(), name: t.String() }), {
+      description:
+        'The projects of the team the caller reads the figures of: what `projectId` takes.',
+    }),
+  }),
+]);
+
+// The window, in days back from now. The same number of days before it is read as
+// well, which is what every headline figure is compared against.
+const analyticsDays = t.Optional(t.Numeric({ minimum: 1, maximum: 365 }));
+
+export const workspaceAnalyticsQuery = t.Object({ days: analyticsDays });
+
+export const analyticsQuery = t.Object({
+  days: analyticsDays,
+  projectId: t.Optional(
+    t.Numeric({ description: 'Narrows the figures to one project of the team.' }),
   ),
 });

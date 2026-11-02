@@ -108,7 +108,8 @@
     "restore": "恢复工作项",
     "archive": "归档工作项",
     "delete": "删除工作项",
-    "shareIssue": "共享工作项"
+    "shareIssue": "共享工作项",
+    "move": "移动到其他项目"
   },
   "actions": {
     "deleteTitle": "删除工作项",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "此操作无法撤销。",
     "deleteDescription": "删除 {issue}？这会删除该工作项及其评论、活动和附件。",
     "archiveDescription": "归档 {issue}？该工作项将离开看板，之后可以恢复。",
-    "applyDescription": "将 <v>{action}</v> 应用于此工作项？"
+    "applyDescription": "将 <v>{action}</v> 应用于此工作项？",
+    "moveTitle": "移动事项",
+    "move": "移动",
+    "moveDescription": "将 {issue} 移动到本团队的其他项目。它会在那里获得新编号，旧链接仍可打开它。",
+    "moveSubtasks": "{count, plural, other {它的 # 个子任务会一起移动。}}",
+    "moveProject": "项目",
+    "moveChooseProject": "选择项目",
+    "moveColumn": "状态",
+    "moveColumnMatching": "匹配的状态",
+    "moveCarriedOver": "目标项目中有同名的类型、标签和自定义字段时会保留。周期、计划以及与本项目事项的关联会被移除。"
   },
   "create": {
     "title": "新建工作项",
@@ -237,6 +247,8 @@
     "toSend": "发送",
     "unknownAuthor": "未知用户",
     "goToLastComment": "跳转到最新评论",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
     "edit": "编辑",
     "edited": "已编辑",
     "deleteComment": "删除评论",
@@ -257,7 +269,9 @@
     "no": "否",
     "time": "时间",
     "startTime": "开始时间",
-    "endTime": "结束时间"
+    "endTime": "结束时间",
+    "pickOption": "选择选项…",
+    "noOption": "无选项"
   },
   "editor": {
     "descriptionPlaceholder": "添加描述…"
@@ -341,7 +355,8 @@
     "worklogChanged": "将 <v>{fromDate}</v> 的 <v>{from}</v> 改为 <v>{date}</v> 的 <v>{to}</v>",
     "worklogRemoved": "删除了 <v>{date}</v> 的 <v>{time}</v>",
     "commentEdited": "编辑了一条评论",
-    "commentDeleted": "删除了一条评论"
+    "commentDeleted": "删除了一条评论",
+    "issueMoved": "将此事项从 <v>{from}</v> 移动到 <v>{to}</v>"
   },
   "development": {
     "title": "开发",
@@ -463,5 +478,91 @@
     "noAssignee": "无负责人",
     "noType": "无类型",
     "noLabels": "无标签"
+  },
+  "agentRuns": {
+    "title": "代理运行",
+    "refresh": "Refresh",
+    "loading": "Loading runs…",
+    "loadError": "Could not load run history. Try refreshing.",
+    "empty": "No agent runs for this issue.",
+    "loadMore": "Load older runs",
+    "pending": "Pending",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "attempts": "Attempts: {count}",
+    "started": "First started: {date}",
+    "finished": "Finished: {date}",
+    "pendingHint": "This run is waiting or executing. Refresh to read its latest state.",
+    "task": "Task",
+    "error": "Last error",
+    "result": "Result",
+    "input": "Input",
+    "trace": "Latest recorded attempt",
+    "noTrace": "No execution steps have been recorded yet. Steps may appear after the trace is saved.",
+    "externalHint": "No execution transcript was recorded. Use a runner version that reports run events.",
+    "attributes": "Attributes",
+    "recordedAttempt": "Recorded attempt",
+    "latestAttempt": "Latest attempt",
+    "previousAttempt": "Previous attempt",
+    "attemptStarted": "Attempt started: {date}",
+    "duration": "{milliseconds, number} ms",
+    "triggers": {
+      "mention": "Mention",
+      "delegation": "Delegation",
+      "field": "Member field",
+      "schedule": "Schedule",
+      "manual": "Manual",
+      "status": "Status change",
+      "event": "Event"
+    },
+    "queued": "Waiting",
+    "running": "Running",
+    "queuedHint": "Waiting for a runner, a retry or its scheduled start.",
+    "queueTitle": "代理运行",
+    "internalInFlight": "工作区内部代理：{running}/{limit} 运行中",
+    "internalInFlightNoLimit": "工作区内部代理：{running} 个运行中",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "In progress",
+    "historySection": "History",
+    "waitingForRunner": "Waiting for runner",
+    "offlineHint": "Waiting runs start when the runner connects.",
+    "retryAt": "Retry at {time}",
+    "startsAt": "Starts at {time}",
+    "inDuration": "in {duration}",
+    "afterAttempts": "after {count, plural, one {# attempt} other {# attempts}}",
+    "startedAgo": "started {time}",
+    "stepsSection": "What the agent did",
+    "outputTail": "The output is long: the runner sent only its end.",
+    "openWorkItem": "Open work item",
+    "scheduleRun": "Schedule: {name}",
+    "facts": {
+      "agent": "Agent",
+      "trigger": "Trigger",
+      "started": "Started",
+      "finished": "Finished",
+      "attempts": "Attempts",
+      "runner": "Runner",
+      "delivery": "Delivery",
+      "context": "Context",
+      "run": "Run"
+    },
+    "connection": {
+      "push": "Invocation URL",
+      "online": "Online",
+      "offline": "Offline",
+      "never": "Not connected"
+    },
+    "presence": {
+      "offline": "Runner offline",
+      "never": "Runner not connected"
+    },
+    "externalAttempt": "Recorded attempt {attempt}",
+    "openCodex": "Open in Codex",
+    "sessionHint": "Opens the local Codex app. The session must be available on this computer or its connected host.",
+    "traceTruncated": "The recording limit was reached. Later events are omitted; the final run result is still available.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "This run is not in your queue, or you cannot read it.",
+    "backToRuns": "Back to runs"
   }
 }

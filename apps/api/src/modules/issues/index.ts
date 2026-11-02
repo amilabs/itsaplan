@@ -1,15 +1,34 @@
-import { Elysia, t } from 'elysia';
+import { Elysia, t, type DocumentDecoration } from 'elysia';
+import { listIssueAgentRuns, getIssueAgentRunTrace } from './agent-runs';
 import { mcpTool } from '#mcp/generate';
 import { noContent } from '#shared/http';
-import { guards, entityGuard, assertMcpAllowed, requiresPermission } from '#shared/guards';
+import {
+  guards,
+  entityGuard,
+  assertMcpAllowed,
+  assertProjectReachable,
+  requiresPermission,
+} from '#shared/guards';
 import { authContext } from '#shared/auth-context';
-import { assertPermission, assertProjectOwner, requireUser } from '#shared/access';
-import { HttpError } from '#shared/lib';
+import {
+  assertPermission,
+  assertProjectOwner,
+  assertWritable,
+  readableProjectIds,
+  requireUser,
+} from '#shared/access';
+import { boundProjectId, isMcpRequest } from '#shared/mcp-request';
+import { getProjectById } from '#modules/projects/service';
+import { HttpError, instantParam } from '#shared/lib';
 import { accessErrors, commonErrors, errors } from '#shared/responses';
 import { deleteObject } from '@repo/storage';
 import {
   createIssue,
   searchIssues,
+  searchIssuesInProjects,
+  listIssuesInProjects,
+  ISSUE_STATE_TYPES,
+  type IssueStateType,
   listIssues,
   listArchivedIssues,
   getIssue,
@@ -60,6 +79,7 @@ import {
   updateWorklog,
 } from './worklogs';
 import { listIssueCycles } from './cycle-history';
+import { moveIssue } from './move';
 import {
   createAndLinkPullRequest,
   linkExistingPullRequest,
@@ -72,6 +92,7 @@ import { DevelopmentLinkResponse } from '#modules/git/model';
 import {
   createChecklist,
   createChecklistItem,
+  createChecklistItems,
   deleteChecklist,
   deleteChecklistItem,
   getChecklistIssueId,
@@ -85,6 +106,11 @@ import {
 
 import {
   issueParams,
+  issueAgentRunsQuery,
+  issueAgentRunParams,
+  IssueAgentRunPageResponse,
+  IssueAgentRunTraceResponse,
+  issueAgentTraceQuery,
   issueDevelopmentLinkParams,
   issueDevelopmentRepositoryParams,
   issueDevelopmentListQuery,
@@ -108,6 +134,7 @@ import {
   updateWorklogBody,
   IssueWithFieldsResponse,
   IssueSearchHitResponse,
+  CrossProjectIssueHitResponse,
   FeedItemResponse,
   FeedPageResponse,
   GroupedFeedPageResponse,
@@ -122,7 +149,9 @@ import {
   bulkArchiveIssuesBody,
   bulkDeleteIssuesBody,
   searchIssuesQuery,
+  searchAllIssuesQuery,
   listIssuesQuery,
+  listAllIssuesQuery,
   issueSequenceParams,
   updateIssueBody,
   subtaskDispositionQuery,
@@ -132,12 +161,14 @@ import {
   issueLinkParams,
   checklistTitleBody,
   createChecklistItemBody,
+  createChecklistItemsBody,
   updateChecklistItemBody,
   feedRangeQuery,
   createCommentBody,
   updateCommentBody,
   commentParams,
   archiveIssueBody,
+  moveIssueBody,
   BulkUpdatedResponse,
   BulkArchivedResponse,
   BulkDeletedResponse,
@@ -189,6 +220,21 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
   // entry and a comment belong to the issue that carries them, so they all resolve
   // to the same work_items permission.
   .macro({
+    issueAgentRuns(_enabled: boolean) {
+      return {
+        detail: requiresPermission(['ai_agents', 'read']) as DocumentDecoration,
+        async resolve({ params, user, request }) {
+          const projectId = await getIssueProjectId(
+            Number((params as { issueId: string }).issueId),
+          );
+          if (projectId == null) throw new HttpError(404, 'Issue not found');
+          await assertPermission(projectId, user, 'work_items', 'read');
+          await assertPermission(projectId, user, 'ai_agents', 'read');
+          await assertMcpAllowed(projectId, request.headers);
+          return { projectId };
+        },
+      };
+    },
     workItem: entityGuard('work_items', 'Issue not found', (p) =>
       getIssueProjectId(Number(p.issueId)),
     ),
@@ -240,8 +286,22 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
           await assertPermission(entry.projectId, user, 'work_items', 'edit');
           if (entry.userId !== requireUser(user).id)
             await assertProjectOwner(entry.projectId, user);
-          await assertMcpAllowed(entry.projectId, request.headers);
+          await assertProjectReachable(entry.projectId, request);
           return { projectId: entry.projectId };
+        },
+      };
+    },
+    // The project an issue moves to: the caller must be allowed to create issues there,
+    // on top of the delete the issue's own project asks for through workItem.
+    moveTarget(_enabled: boolean) {
+      return {
+        async resolve({ body, user, request }) {
+          const target = await getProjectById((body as { projectId: number }).projectId);
+          if (!target) throw new HttpError(404, 'Project not found');
+          await assertPermission(target.id, user, 'work_items', 'create');
+          await assertMcpAllowed(target.id, request.headers);
+          assertWritable(target, request.method);
+          return { target };
         },
       };
     },
@@ -256,7 +316,7 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
           await assertPermission(entry.projectId, user, 'work_items', 'edit');
           if (entry.actorUserId !== requireUser(user).id)
             await assertProjectOwner(entry.projectId, user);
-          await assertMcpAllowed(entry.projectId, request.headers);
+          await assertProjectReachable(entry.projectId, request);
           return { projectId: entry.projectId };
         },
       };
@@ -426,6 +486,11 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
           labelIds: labelIds && labelIds.length ? labelIds : undefined,
           dueFrom: str(query.dueFrom),
           dueTo: str(query.dueTo),
+          createdFrom: instantParam('createdFrom', query.createdFrom),
+          createdTo: instantParam('createdTo', query.createdTo),
+          updatedFrom: instantParam('updatedFrom', query.updatedFrom),
+          updatedTo: instantParam('updatedTo', query.updatedTo),
+          blocked: query.blocked === 'true',
           limit,
         },
         { includeArchived: query.includeArchived === 'true' },
@@ -438,7 +503,8 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
       response: { 200: t.Array(IssueSearchHitResponse), ...commonErrors },
       detail: {
         summary: 'List issues by filters',
-        description: "List a project's issues by field filters.",
+        description:
+          "List a project's issues by field filters, most recently updated first. Each issue carries createdAt, updatedAt, completedAt, statusSince (when it entered its current column), estimatePoints, estimateMinutes, loggedMinutes and its parent's identifier and title. blocked=true lists the issues held up by an issue still open, through a blocks relation.",
         ...mcpTool('list_issues'),
       },
     },
@@ -483,12 +549,18 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
   // identifier-based issue page. Same read permission as the by-id read.
   .get(
     '/projects/:projectKey/issues/:sequenceNumber',
-    async ({ project, params }) => {
+    async ({ project, params, user, request }) => {
       const issue = await getIssueBySequence(project.id, params.sequenceNumber);
       if (!issue) throw new HttpError(404, 'Issue not found');
+      // An old number of a moved issue resolves to it in the project it is in now,
+      // which the caller must be able to read as well.
+      if (issue.projectId !== project.id) {
+        await assertPermission(issue.projectId, user, 'work_items', 'read');
+        await assertMcpAllowed(issue.projectId, request.headers);
+      }
       const fields = await getIssueFieldValues(issue.id);
       const links = await listIssueLinks(issue.id);
-      const watchers = await listIssueWatchers(project.id, issue.id);
+      const watchers = await listIssueWatchers(issue.projectId, issue.id);
       const parent = await getParentRef(issue.parentId);
       const subtasks = await listSubtasks(issue.id);
       const checklists = await listChecklists(issue.id);
@@ -504,6 +576,100 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
         description:
           'Get an issue by its project-scoped number: the 42 in "MKT-42". Use this when you were given an identifier; get_issue takes the internal numeric id instead.',
         ...mcpTool('get_issue_by_number'),
+      },
+    },
+  )
+
+  // Text search across every project the caller may read work items in, matched like
+  // search_issues. This route comes before /issues/:issueId so the static "search"
+  // segment wins over the numeric param.
+  .get(
+    '/issues/search',
+    async ({ user, query, request }) => {
+      const ids = await readableProjectIds(requireUser(user).id, [['work_items', 'read']], {
+        mcpOnly: isMcpRequest(request.headers),
+      });
+      const bound = boundProjectId(request.headers);
+      const clamp = (value: number) => Math.min(Math.max(value, 1), 50);
+      return searchIssuesInProjects(
+        ids.filter((id) => (bound == null || id === bound) && id !== query.excludeProjectId),
+        query.q,
+        { limit: clamp(query.limit ?? 20), perProjectLimit: clamp(query.perProjectLimit ?? 5) },
+      );
+    },
+    {
+      query: searchAllIssuesQuery,
+      response: { 200: t.Array(CrossProjectIssueHitResponse), ...errors(400, 401) },
+      detail: {
+        summary: 'Search issues in all projects',
+        description:
+          'Search the issues of every project you can read by text, archived issues included, ' +
+          'at most perProjectLimit hits from each project. Each hit names its project ' +
+          '(projectKey, projectRef, projectName, teamName); use search_issues for one project. ' +
+          'An agent run searches only the project it works in.',
+        ...requiresPermission(['work_items', 'read']),
+        ...mcpTool('search_issues_all_projects'),
+      },
+    },
+  )
+
+  // The list_issues filters that mean the same in every project, over every project the
+  // caller may read work items in. Empty values mean "any", as on list_issues.
+  .get(
+    '/issues',
+    async ({ user, query, request }) => {
+      const ids = await readableProjectIds(requireUser(user).id, [['work_items', 'read']], {
+        mcpOnly: isMcpRequest(request.headers),
+      });
+      const bound = boundProjectId(request.headers);
+      const str = (v: string | undefined) => (v ? v : undefined);
+      const csvIds = (v: string | undefined) => {
+        const list = v
+          ?.split(',')
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n > 0);
+        return list?.length ? list : undefined;
+      };
+      const stateTypes = query.stateTypes
+        ?.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const unknown = stateTypes?.find(
+        (s) => !(ISSUE_STATE_TYPES as readonly string[]).includes(s),
+      );
+      if (unknown) throw new HttpError(400, `Unknown state type: ${unknown}`);
+      return listIssuesInProjects(
+        ids.filter((id) => bound == null || id === bound),
+        {
+          assigneeUserId: str(query.assigneeUserId),
+          delegateUserId: str(query.delegateUserId),
+          priority: str(query.priority),
+          dueFrom: str(query.dueFrom),
+          dueTo: str(query.dueTo),
+          createdFrom: instantParam('createdFrom', query.createdFrom),
+          createdTo: instantParam('createdTo', query.createdTo),
+          updatedFrom: instantParam('updatedFrom', query.updatedFrom),
+          updatedTo: instantParam('updatedTo', query.updatedTo),
+          cycleIds: csvIds(query.cycleIds),
+          parentIds: csvIds(query.parentIds),
+          stateTypes: stateTypes?.length ? (stateTypes as IssueStateType[]) : undefined,
+          limit: Math.min(Math.max(query.limit ?? 50, 1), 500),
+        },
+        { includeArchived: query.includeArchived === 'true' },
+      );
+    },
+    {
+      query: listAllIssuesQuery,
+      response: { 200: t.Array(CrossProjectIssueHitResponse), ...errors(400, 401) },
+      detail: {
+        summary: 'List issues in all projects',
+        description:
+          'List the issues of every project you can read by field filters, most recently ' +
+          'updated first. Each issue names its project (projectKey, projectRef, projectName, ' +
+          'teamName); use list_issues for one project and its project-scoped filters. An agent ' +
+          'run lists only the project it works in.',
+        ...requiresPermission(['work_items', 'read']),
+        ...mcpTool('list_issues_all_projects'),
       },
     },
   )
@@ -568,6 +734,30 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
           'Update an issue by its numeric id. Moving it into a column that is at a ' +
           'hard WIP limit fails with 409 (code wip_limit_exceeded).',
         ...mcpTool('update_issue'),
+      },
+    },
+  )
+
+  // Moves the issue, with its subtasks, to another project of the same team. It takes
+  // the next number there; the old identifier keeps resolving to it.
+  .post(
+    '/issues/:issueId/move',
+    async ({ params, body, target, user }) =>
+      moveIssue(params.issueId, target, body.columnId, requireUser(user).id),
+    {
+      params: issueParams,
+      body: moveIssueBody,
+      workItem: 'delete',
+      moveTarget: true,
+      response: { 200: IssueResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Move an issue to another project',
+        description:
+          'Move an issue, with its subtasks, to another project of the same team. Each ' +
+          'moved issue gets a new number in the target project and its old identifier ' +
+          'still resolves. Column, type, labels and custom fields are matched by name; ' +
+          'cycle, initiative and links to issues left behind are dropped.',
+        ...mcpTool('move_issue'),
       },
     },
   )
@@ -996,6 +1186,26 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
     },
   )
 
+  .post(
+    '/checklists/:checklistId/items/batch',
+    async ({ params, body, user, set }) => {
+      set.status = 201;
+      return createChecklistItems(params.checklistId, body.items, requireUser(user).id);
+    },
+    {
+      body: createChecklistItemsBody,
+      params: checklistParams,
+      checklist: 'edit',
+      response: { 201: t.Array(ChecklistItemResponse), ...commonErrors },
+      detail: {
+        summary: 'Add checklist items in bulk',
+        description:
+          'Append 1–100 items to an existing checklist in input order. Each content is 1–500 characters. The items and their activity entries are saved atomically.',
+        ...mcpTool('create_checklist_items'),
+      },
+    },
+  )
+
   .put(
     '/checklists/:checklistId/items/reorder',
     async ({ params, body }) => reorderChecklistItems(params.checklistId, body.orderedIds),
@@ -1045,6 +1255,53 @@ export const issueRoutes = new Elysia({ name: 'issues', detail: { tags: ['Issues
         summary: 'Delete a checklist item',
         description: 'Remove one item from a checklist.',
         ...mcpTool('delete_checklist_item'),
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/agent-runs',
+    async ({ params, query, projectId }) =>
+      listIssueAgentRuns(projectId, params.issueId, query.before, query.limit),
+    {
+      params: issueParams,
+      query: issueAgentRunsQuery,
+      issueAgentRuns: true,
+      response: { 200: IssueAgentRunPageResponse, ...commonErrors },
+      detail: {
+        summary: "List an issue's agent runs",
+        description:
+          'Triggered runs in the current project, newest first, including the prompt, result and error.',
+      },
+    },
+  )
+
+  .get(
+    '/issues/:issueId/agent-runs/:runId/trace',
+    async ({ params, user, query, projectId }) => {
+      const trace = await getIssueAgentRunTrace(
+        projectId,
+        params.issueId,
+        params.runId,
+        requireUser(user).id,
+        query.traceId,
+      );
+      if (trace === undefined) throw new HttpError(404, 'Run not found');
+      return Response.json(trace);
+    },
+    {
+      params: issueAgentRunParams,
+      query: issueAgentTraceQuery,
+      issueAgentRuns: true,
+      response: {
+        200: IssueAgentRunTraceResponse,
+        ...commonErrors,
+      },
+      detail: {
+        summary: "Read an issue run's trace",
+        description:
+          'The selected or latest recorded attempt, with a link to the previous one. ' +
+          'Null when no latest trace is available.',
       },
     },
   )

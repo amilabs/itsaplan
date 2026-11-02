@@ -1,4 +1,5 @@
 {
+  "archived": "مؤرشف",
   "create": {
     "title": "فريق جديد",
     "namePlaceholder": "اسم الفريق",
@@ -9,6 +10,8 @@
     "submit": "إنشاء فريق"
   },
   "sections": {
+    "collapse": "طي الأقسام",
+    "expand": "توسيع الأقسام",
     "info": {
       "title": "معلومات",
       "description": "الفريق ومكانك فيه."
@@ -16,6 +19,10 @@
     "projects": {
       "title": "المشاريع",
       "description": "المشاريع التي يملكها الفريق."
+    },
+    "templates": {
+      "title": "قوالب المشاريع",
+      "description": "إعدادات مشاريع محفوظة تبدأ منها المشاريع الجديدة."
     },
     "members": {
       "title": "أعضاء الفريق",
@@ -48,6 +55,13 @@
     "agents": {
       "title": "وكلاء الذكاء الاصطناعي",
       "description": "وكلاء الذكاء الاصطناعي التابعون لهذا الفريق، والمشاريع التي يعمل فيها كل منهم."
+    },
+    "analytics": {
+      "title": "الاستهلاك",
+      "description": "إنفاق وكلاء الفريق على النماذج، حسب الوكيل والمشروع واليوم."
+    },
+    "queue": {
+      "title": "تشغيلات الوكلاء"
     }
   },
   "info": {
@@ -61,10 +75,19 @@
     "leads": "المالكون والمديرون",
     "leadsHint": "الأشخاص الذين يمكنهم إدارة هذا الفريق ومشاريعه.",
     "saved": "تم حفظ الفريق",
-    "leaveHint": "تحتفظ بالمشاريع التي أنت عضو فيها. للانضمام مجددًا يجب أن يضيفك أحد المالكين."
+    "leaveHint": "تحتفظ بالمشاريع التي أنت عضو فيها. للانضمام مجددًا يجب أن يضيفك أحد المالكين.",
+    "delete": {
+      "action": "حذف الفريق",
+      "hint": "يُحذف معه أعضاؤه وأدواره وقوالب مشاريعه ودعواته ومهاراته وأدواته وتكاملاته. يحتفظ الأشخاص بحساباتهم وفرقهم الأخرى.",
+      "blocked": "احذف مشاريع الفريق ووكلاء الذكاء الاصطناعي الخاصين به أولاً.",
+      "title": "حذف {name}؟",
+      "description": "يُحذف <strong>{name}</strong> مع أعضائه وأدواره وقوالب مشاريعه ودعواته ومهاراته وأدواته وتكاملاته. يحتفظ الأشخاص بحساباتهم وفرقهم الأخرى. لا يمكن التراجع عن ذلك.",
+      "deleted": "تم حذف الفريق"
+    }
   },
   "columns": {
     "project": "المشروع",
+    "template": "القالب",
     "owners": "المالكون",
     "members": "الأعضاء",
     "created": "أُنشئ",
@@ -80,6 +103,7 @@
     "emailPlaceholder": "name@example.com",
     "alreadyMember": "{email} موجود بالفعل في هذا الفريق",
     "alreadyPending": "{email} لديه دعوة معلقة بالفعل",
+    "domainNotAllowed": "نطاق {email} غير مسموح به في هذه النسخة",
     "refused": "تعذّرت دعوة {email}",
     "roleLabel": "الدور في الفريق",
     "roleHint": {
@@ -92,11 +116,16 @@
     "joinsProject": "هيدخل الفريق و{project}",
     "copyLink": "نسخ الرابط",
     "copied": "تم النسخ",
+    "resendEmail": "إرسال بريد إلكتروني",
+    "resendingEmail": "جارٍ الإرسال…",
     "revokeAction": "إلغاء الدعوة",
     "revokeTitle": "إلغاء دعوة {email}؟",
     "revokeConfirm": "إلغاء الدعوة",
     "revokeDescription": "الرابط هيبطل يشتغل. تقدر تدعوه تاني بعدين.",
-    "pending": "مدعو"
+    "pending": "مدعو",
+    "expiredAt": "انتهت في {date}",
+    "renew": "تجديد",
+    "renewing": "جارٍ التجديد…"
   },
   "manage": {
     "label": "إدارة الفرق",
@@ -117,9 +146,9 @@
     "search": "البحث عن الأدوار",
     "noMatches": "لا توجد أدوار تطابق “{query}”.",
     "default": "افتراضي",
+    "system": "النظام",
     "editAction": "تعديل الدور",
     "deleteAction": "حذف الدور",
-    "defaultUndeletable": "لا يمكن حذف الدور الافتراضي",
     "deleteTitle": "حذف الدور \"{name}\"",
     "deleteDescription": "مفيش حد على الدور ده. ده مش هينفع ترجع فيه.",
     "deleteInUse": "الدور ده لسه مستخدم. اختار الدور اللي هينتقلوا ليه.",
@@ -133,16 +162,6 @@
     "moveAndDelete": "انقل واحذف",
     "noTargetRole": "مفيش دور تاني تنقلهم ليه. اعمل واحد الأول.",
     "newRole": "دور جديد",
-    "editorTitleEdit": "تعديل الدور",
-    "editorTitleNew": "دور جديد",
-    "namePlaceholder": "مثال: مساهم",
-    "resourceColumn": "المورد",
-    "toggleActionAll": "تبديل {action} لكل الموارد",
-    "toggleGroupAll": "تبديل كل صلاحيات {group}",
-    "toggleActionGroup": "تبديل {action} لـ {group}",
-    "cellAria": "{resource}: {action}",
-    "saveRole": "حفظ الدور",
-    "createRole": "إنشاء دور",
     "copyRoles": "نسخ الأدوار",
     "pasteRoles": "لصق الأدوار",
     "nothingToCopy": "لا توجد أدوار مخصّصة لنسخها.",
@@ -159,13 +178,29 @@
       "actions": {
         "create": "جديد",
         "update": "استبدال",
-        "skip": "تخطٍّ (افتراضي)"
+        "skip": "تخطٍّ (دور النظام)"
       }
     },
     "transferErrors": {
       "invalidJson": "الحافظة لا تحتوي على JSON صالح.",
       "notAnExport": "الحافظة لا تحتوي على تصدير أدوار.",
       "empty": "تصدير الأدوار فارغ."
+    }
+  },
+  "templates": {
+    "ownerOnly": "يمكن لمالك الفريق أو مديره فقط إدارة قوالب المشاريع.",
+    "empty": "لا توجد قوالب مشاريع بعد",
+    "emptyHint": "احفظ مشروعًا كقالب لتنشئ منه مشاريع جديدة.",
+    "openProjects": "الانتقال إلى المشاريع",
+    "deleteAction": "حذف القالب",
+    "deleteDialog": {
+      "title": "حذف القالب \"{name}\"؟",
+      "description": "لا تتغير المشاريع التي أُنشئت منه.",
+      "confirm": "حذف القالب"
+    },
+    "panel": {
+      "saved": "حُفظ في {date}",
+      "none": "لا شيء"
     }
   },
   "panel": {
@@ -219,6 +254,8 @@
     "timeout": "المهلة (ث)",
     "optional": "اختياري",
     "apiKey": "مفتاح API",
+    "from": "عنوان المرسِل",
+    "fromHint": "مطلوب مع Resend. ومع SMTP بيبقى اسم المستخدم افتراضيًا.",
     "telegramBot": "بوت Telegram",
     "telegramBotHint": "البوت الذي يوصّل الإشعارات لكل مشاريع الفريق. يختار كل عضو محادثته في تفضيلاته. يُخزَّن الرمز مشفَّرًا.",
     "botToken": "رمز API للبوت (اختياري)",
@@ -358,6 +395,8 @@
     "username": "اسم المستخدم",
     "usernamePlaceholder": "مثل: triage-bot",
     "usernameHint": "حروف وأرقام ونقط وشرطات وشرطات سفلية، لحد 64 حرف.",
+    "chat": "المحادثة",
+    "chatHint": "يتيح لعضو فتح محادثة مع هذا الوكيل أو متابعتها. عند الإيقاف يختفي من محدد المحادثة، وتظل الإشارات والتفويضات والمهام المجدولة تشغّله.",
     "access": "الإتاحة",
     "accessHint": "مين يقدر يدّي الوكيل مهام",
     "model": "النموذج",
@@ -389,8 +428,46 @@
     "runDelay": "استنى قبل ما تبدأ",
     "runDelayHint": "الوقت اللي تفضل فيه تعدّل على المهمة قبل ما الوكيل يبدأ. صفر يعني يبدأ على طول.",
     "minutes": "دقيقة",
-    "runner": "المنفّذ (runner)",
-    "runnerHint": "العملية اللي على جهازك واللي بتنفّذ مهام الوكيل ده",
+    "connection": "الاتصال",
+    "connectionHint": "الوكيل بيستلم مهامه إزاي",
+    "deliveryRunner": "المنفّذ",
+    "deliveryRunnerHint": "جهازك بيطلب المهام",
+    "deliveryUrl": "نقطة الاستقبال",
+    "deliveryUrlHint": "الرابط بتاعك بيستقبل المهام",
+    "invocationUrl": "رابط نقطة الاستقبال",
+    "invocationUrlPlaceholder": "https://example.com/agent",
+    "invocationUrlHint": "بيستقبل كل مهمة ورسالة شات كطلب POST موقّع.",
+    "invocationUnsaved": "احفظ علشان المهام تتبعت على الرابط ده.",
+    "invocationSecretOnSave": "احفظ الرابط عشان تاخد سرّ التوقيع.",
+    "invocationSecret": "سرّ التوقيع",
+    "invocationSecretHint": "استخدمه عشان تتأكد من الهيدر X-Itsaplan-Signature.",
+    "invocationSecretRotated": "سرّ التوقيع اتولّد من جديد",
+    "invocationRotate": "إعادة توليد السرّ",
+    "invocationRotateTitle": "إعادة توليد سرّ التوقيع؟",
+    "invocationRotateMessage": "الطلبات بتاعة <v>{name}</v> هتستخدم السرّ الجديد على طول. حدّث نقطة الاستقبال، وإلا هترفض المهام الجاية.",
+    "invocationTest": "طلب تجريبي",
+    "invocationTestHint": "بيبعت ping موقّع على الرابط المحفوظ.",
+    "invocationTestSend": "ابعت تجربة",
+    "invocationTestSending": "بيتبعت…",
+    "invocationTestOk": "ردّ بـ {status} في {ms} ms",
+    "invocationTestRefused": "ردّ بـ {status}. المتوقع 2xx.",
+    "invocationTestTimeout": "مفيش رد في الوقت المناسب. رد الأول، وبعدين اشتغل.",
+    "invocationTestUnreachable": "مقدرناش نوصل لنقطة الاستقبال",
+    "invocationHelpOpen": "إزاي تعمل نقطة الاستقبال",
+    "invocationHelpTitle": "إزاي تستلم المهام على رابط",
+    "invocationHelpVerify": "اتأكد من التوقيع",
+    "invocationHelpVerifyHint": "HMAC-SHA256 للتوقيت ونقطة والـ body الخام، والمفتاح هو سرّ التوقيع. ارفض أي طلب أقدم من خمس دقايق.",
+    "invocationHelpAccept": "ردّ بـ 2xx على طول",
+    "invocationHelpAcceptHint": "اشتغل بعد ما ترد. لو رديت بأي حالة تانية، المهمة هتتبعت تاني بعدين، ورسالة الشات هتفشل على طول.",
+    "invocationHelpPayload": "اقرا المهمة",
+    "invocationHelpPayloadHint": "حقل event بيقول إيه اللي وصل: مهمة، رسالة شات، أو ping تجريبي.",
+    "invocationHelpTabRun": "مهمة",
+    "invocationHelpTabChat": "رسالة شات",
+    "invocationHelpTabPing": "ping تجريبي",
+    "invocationHelpReport": "ابعت النتيجة بمفتاح الوكيل",
+    "invocationHelpReportHint": "وانت شغّال ابعت heartbeat كل 5 دقايق على الأقل. وبعدين ابعت النتيجة. ممكن تبعت رد الشات على أجزاء.",
+    "invocationHelpTest": "ابعت طلب تجريبي",
+    "invocationHelpTestHint": "قسم الاتصال هيوريك نقطة الاستقبال ردّت إزاي.",
     "runnerWayCli": "أداة المنفّذ (runner CLI)",
     "runnerWayCliHint": "حزمة npm بتاعتنا. وجّهها على وكيل برمجة، وهي بتسأل على المهام وترجّع النتيجة. محتاجة ملف إعدادات فيه مفتاح الوكيل.",
     "runnerWayApi": "كودك إنت",
@@ -413,7 +490,7 @@
     "runnerHelpTabCustom": "بتاعك إنت",
     "runnerHelpPiAdapter": "بي يقرأ .mcp.json عن طريق إضافة. ثبّتها مرة واحدة: pi install npm:pi-mcp-adapter",
     "runnerHelpCheck": "اتأكد إنه متوصّل",
-    "runnerHelpCheckHint": "قسم المنفّذ هيبان فيه «شغّال».",
+    "runnerHelpCheckHint": "قسم الاتصال هيبان فيه «شغّال».",
     "runnerOnline": "المنفّذ شغّال",
     "runnerOffline": "المنفّذ مش شغّال",
     "runnerNever": "مفيش منفّذ لسه",
@@ -421,6 +498,8 @@
     "runnerStateOffline": "مش شغّال",
     "runnerStateNone": "مش متوصّل",
     "runnerSeen": "آخر ظهور من {time}",
+    "runnerStateUrl": "نقطة استقبال",
+    "runnerUrl": "بيستلم المهام على رابطه",
     "actions": "الإجراءات",
     "actionsHint": "اللي الوكيل يقدر يعمله في المشروع",
     "searchActions": "بحث في الإجراءات",
@@ -450,10 +529,17 @@
     "goToTools": "الانتقال إلى الأدوات",
     "searchTools": "بحث في الأدوات",
     "advanced": "متقدم",
-    "advancedHint": "المعاينة وحد الخطوات والذاكرة",
+    "advancedHint": "المعاينة والاستدلال وحدّا الخطوات والوقت والذاكرة",
     "temperature": "درجة العشوائية",
+    "reasoningEffort": "مستوى الاستدلال",
+    "reasoningEffortDefault": "الإعداد الافتراضي للمزوّد",
+    "reasoningEffortLow": "منخفض",
+    "reasoningEffortMedium": "متوسط",
+    "reasoningEffortHigh": "مرتفع",
     "optional": "اختياري",
     "maxSteps": "الحد الأقصى للخطوات",
+    "runTimeout": "حد وقت التشغيل (ث)",
+    "runTimeoutDefault": "الحد الأقصى للنسخة",
     "memory": "ذاكرة المحادثة",
     "memoryHint": "الوكيل بيفتكر آخر رسايل في نفس سلسلة المحادثة.",
     "memoryCount": "تذكّر آخر N رسالة",
@@ -477,6 +563,7 @@
     "endOfHistory": "نهاية السجل",
     "manualTask": "مهمة يدوية",
     "scheduledTask": "مهمة مجدولة",
+    "documentTask": "تعليق في مستند",
     "failed": "فشل",
     "task": "المهمة",
     "error": "خطأ",
@@ -538,5 +625,167 @@
     "projectsHint": "المشروع الجديد بيبدأ بالإعداد الافتراضي للنسخة.",
     "noProjects": "الفريق لسه مالوش مشاريع.",
     "projectToggleAria": "تبديل الوصول عبر MCP لـ {project}"
+  },
+  "workspace": {
+    "rail": "مساحات العمل",
+    "create": "مساحة عمل جديدة",
+    "createUnavailableTitle": "مساحات عمل أكتر",
+    "createUnavailableHint": "مساحات عمل أكتر لكل شخص متاحة في Cloud وفي نسخة Pro للاستضافة الذاتية.",
+    "general": "عام",
+    "roles": {
+      "owner": "المالك",
+      "admin": "مسؤول"
+    },
+    "titles": {
+      "owner": "مالك مساحة العمل",
+      "admin": "مسؤول مساحة العمل"
+    },
+    "info": {
+      "title": "مساحة العمل",
+      "description": "مساحة العمل التي تتبع لها فرقك.",
+      "workspace": "مساحة العمل",
+      "workspaceHint": "الاسم الذي يراه الجميع.",
+      "role": "دورك",
+      "saved": "تم حفظ مساحة العمل",
+      "color": "اللون",
+      "colorReset": "الافتراضي"
+    },
+    "teamCreation": {
+      "title": "مين يقدر يعمل فرق",
+      "description": "اللي بيعمل الفريق بيبقى مالكه.",
+      "ownerOnly": "المالك بس اللي بيحدد مين يعمل فرق.",
+      "owner": "المالك بس",
+      "managers": "المالك والمسؤولين",
+      "members": "كل اللي في فرقها"
+    },
+    "runLimit": {
+      "title": "تشغيلات الوكلاء المتزامنة",
+      "description": "عدد تشغيلات وكلائها اللي بتشتغل في نفس الوقت. الباقي بيستنى في قائمة الانتظار. 0 يعني من غير حد خاص بيها.",
+      "descriptionCapped": "عدد تشغيلات وكلائها اللي بتشتغل في نفس الوقت، لحد {max}. الباقي بيستنى في قائمة الانتظار. لو 0 يبقى الحد {max}.",
+      "ownerOnly": "المالك بس اللي بيغيّر عدد تشغيلات الوكلاء المتزامنة.",
+      "none": "بلا حدّ"
+    },
+    "managers": {
+      "title": "المديرون",
+      "description": "المالك والمسؤولون يديرون مساحة العمل.",
+      "ownerOnly": "المالك والمسؤولون يديرون مساحة العمل. المالك وحده يضيف المسؤولين أو يزيلهم.",
+      "person": "الشخص",
+      "role": "الدور",
+      "addAction": "إضافة مسؤول",
+      "addTitle": "إضافة مسؤول",
+      "addDescription": "اختر شخصًا من فرق مساحة العمل.",
+      "search": "ابحث بالاسم أو البريد الإلكتروني",
+      "noCandidates": "لا يوجد من يمكن إضافته",
+      "added": "أصبح {name} مسؤولًا",
+      "removeAction": "إزالة المسؤول",
+      "removeTitle": "إزالة {name} من المسؤولين؟",
+      "removeDescription": "سيبقى في فرقه، لكنه لن يتمكن من إدارة مساحة العمل.",
+      "removed": "لم يعد {name} مسؤولًا"
+    },
+    "scim": {
+      "title": "SCIM",
+      "description": "اسمح لمزوّد الهوية بإضافة الأشخاص إلى مساحة العمل هذه وإزالتهم منها، ومنح الوصول إلى المشاريع عبر مجموعاته.",
+      "saved": "تم حفظ إعدادات SCIM",
+      "provisioning": "تزويد الحسابات",
+      "provisioningConfigured": "يضيف مزوّد الهوية الأشخاص إلى مساحة العمل هذه ويزيلهم منها.",
+      "provisioningInstance": "يقوم مزوّد الهوية بإنشاء الحسابات وتحديثها وتعطيلها على هذا الخادم.",
+      "provisioningMissing": "أنشئ رمزاً أولاً.",
+      "token": "الرمز",
+      "noToken": "لم يُنشأ رمز بعد",
+      "tokenHint": "الرمز الذي يرسله مزوّد الهوية. يُعرض مرة واحدة، وإنشاء رمز جديد يوقف القديم.",
+      "generateToken": "إنشاء رمز",
+      "replaceToken": "استبدال الرمز",
+      "baseUrl": "عنوان SCIM",
+      "baseUrlHint": "وجّه مزوّد الهوية إلى هذا العنوان.",
+      "copyBaseUrl": "نسخ عنوان SCIM",
+      "groups": "المجموعات",
+      "groupsHint": "المجموعات التي أرسلها مزوّد الهوية. القائمة تخصّه، وما تمنحه كل مجموعة يُحدَّد هنا.",
+      "groupsEmpty": "لم تُرسل أي مجموعات بعد.",
+      "memberCount": "{count, plural, zero {لا أعضاء} one {عضو واحد} two {عضوان} few {# أعضاء} many {# عضواً} other {# عضو}}",
+      "grantsNothing": "لا تمنح شيئاً بعد",
+      "editMappings": "تعديل الوصول",
+      "roleOwner": "مالك",
+      "roleMember": "عضو",
+      "tokenDialog": {
+        "title": "إنشاء رمز SCIM",
+        "description": "يُعرض الرمز مرة واحدة ولا يمكن قراءته لاحقاً. أي رمز مستخدَم حالياً سيتوقف عن العمل.",
+        "submit": "إنشاء",
+        "submitPending": "جارٍ الإنشاء…",
+        "createdTitle": "رمز SCIM الخاص بك",
+        "createdDescription": "انسخه إلى مزوّد الهوية الآن. لا يمكن عرضه مرة أخرى.",
+        "copy": "نسخ الرمز"
+      },
+      "mappings": {
+        "title": "ما تمنحه {group}",
+        "description": "ينضم أعضاء هذه المجموعة إلى المشاريع المذكورة هنا. إزالة مشروع تسحب العضويات التي منحتها هذه المجموعة له.",
+        "empty": "لا تمنح هذه المجموعة شيئاً بعد.",
+        "addProject": "إضافة مشروع…",
+        "role": "الدور",
+        "roleOwner": "مالك",
+        "roleMember": "عضو",
+        "projectRole": "الدور في المشروع",
+        "defaultRole": "الدور الافتراضي",
+        "remove": "إزالة المشروع",
+        "saved": "تم حفظ وصول المجموعة"
+      }
+    },
+    "delete": {
+      "action": "حذف مساحة العمل",
+      "hint": "فرقها هتتحذف معاها. الناس هيحتفظوا بحساباتهم وفرقهم التانية.",
+      "blocked": "احذف مشاريع فرقها ووكلاء الذكاء الاصطناعي الأول.",
+      "title": "حذف {name}؟",
+      "description": "<strong>{name}</strong> وفرقها هيتحذفوا. الناس هيحتفظوا بحساباتهم وفرقهم التانية. ده مش هينفع ترجع فيه.",
+      "deleted": "تم حذف مساحة العمل"
+    },
+    "agentUsage": {
+      "title": "استهلاك الذكاء الاصطناعي",
+      "description": "إنفاق وكلاء جميع الفرق على النماذج."
+    },
+    "settingsGroup": "الإعدادات",
+    "modelPrices": {
+      "title": "أسعار النماذج",
+      "description": "يحسب استهلاك الذكاء الاصطناعي تكلفة كل استدعاء لنموذج بهذه الأسعار، لكل مليون رمز. أي تغيير يعيد حساب الاستدعاءات السابقة أيضًا.",
+      "used": {
+        "title": "المستخدمة في مساحة العمل هذه",
+        "description": "النماذج التي استدعاها وكلاؤك خلال آخر 90 يومًا، والنماذج التي حددت لها سعرًا.",
+        "unpriced": "{count, plural, zero {لا نماذج بلا سعر.} one {نموذج واحد بلا سعر، لذا لا تدخل استدعاءاته في التكلفة.} two {نموذجان بلا سعر، لذا لا تدخل استدعاءاتهما في التكلفة.} few {# نماذج بلا سعر، لذا لا تدخل استدعاءاتها في التكلفة.} many {# نموذجًا بلا سعر، لذا لا تدخل استدعاءاتها في التكلفة.} other {# نموذج بلا سعر، لذا لا تدخل استدعاءاتها في التكلفة.}}",
+        "empty": "لا استدعاءات للنماذج خلال آخر 90 يومًا. يظهر النموذج هنا بعد أن يستدعيه وكلاؤك."
+      },
+      "all": {
+        "title": "كل النماذج",
+        "description": "الأسعار المضمّنة. حدّد سعرك لأي نموذج.",
+        "search": "ابحث عن نموذج",
+        "noMatch": "لا نماذج تطابق «{query}»."
+      },
+      "columns": {
+        "model": "النموذج",
+        "calls": "الاستدعاءات",
+        "input": "الإدخال",
+        "output": "الإخراج",
+        "cacheRead": "قراءة الذاكرة المؤقتة",
+        "cacheWrite": "الكتابة في الذاكرة المؤقتة",
+        "price": "السعر"
+      },
+      "source": {
+        "own": "سعرك",
+        "builtIn": "مضمّن",
+        "none": "بلا سعر"
+      },
+      "setPrice": "حدّد السعر",
+      "edit": "تعديل",
+      "setTitle": "تحديد السعر",
+      "editTitle": "تعديل السعر",
+      "perMillion": "دولار أمريكي لكل مليون رمز.",
+      "builtInPrice": "المضمّن: {input} للإدخال، {output} للإخراج.",
+      "noBuiltInPrice": "لا يوجد سعر مضمّن لهذا النموذج.",
+      "sameAsInput": "مثل الإدخال",
+      "appliesToPast": "ينطبق على كل استدعاءات هذا النموذج في مساحة العمل هذه، بما فيها السابقة.",
+      "useBuiltIn": "استخدم السعر المضمّن",
+      "removePrice": "احذف السعر",
+      "save": "احفظ السعر"
+    },
+    "queue": {
+      "title": "تشغيلات الوكلاء"
+    }
   }
 }

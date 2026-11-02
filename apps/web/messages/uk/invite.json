@@ -3,14 +3,14 @@
   "subtitle": "Прийміть запрошення, щоб почати роботу",
   "notFoundTitle": "Запрошення не знайдено",
   "notFoundSubtitle": "Це посилання недійсне або більше не активне",
-  "notFoundMessage": "Це посилання-запрошення недійсне або було відкликане.",
   "goToSignIn": "Перейти до входу",
   "closedTitle": "Запрошення закрите",
   "closedSubtitle": "Це запрошення вже {status, select, accepted {прийнято} rejected {відхилено} other {закрито}}",
+  "expiredTitle": "Термін запрошення минув",
+  "expiredSubtitle": "Попросіть того, хто вас запросив, надіслати нове",
   "brandSubtitle": "Вас запросили до спільної роботи.",
   "teamLabel": "Команда",
   "projectLabel": "Проєкт",
-  "alreadyHandled": "Це запрошення вже {status, select, accepted {прийнято} rejected {відхилено} other {закрито}}.",
   "goToApp": "Перейти до застосунку",
   "alreadyMember": "Ви вже учасник цього проєкту — приймати нічого.",
   "goToProject": "Відкрити проєкт",
@@ -36,7 +36,18 @@
   "switchToRegister": "Створити",
   "existingAccountNotice": "Для цієї пошти вже є акаунт. Увійдіть зі своїм паролем.",
   "passwordsDoNotMatch": "Паролі не збігаються.",
-  "genericError": "Щось пішло не так. Спробуйте ще раз.",
   "registerFailed": "Не вдалося створити акаунт.",
-  "signInFailed": "Не вдалося виконати вхід."
+  "signInFailed": "Не вдалося виконати вхід.",
+  "received": {
+    "title": "Your invitations",
+    "description": "Review an invitation to see the team, project and role before joining.",
+    "review": "Review invitation",
+    "continue": "Continue without joining",
+    "loadFailed": "Invitations could not be loaded. Try again or continue without joining.",
+    "retry": "Try again",
+    "loading": "Loading invitations…",
+    "empty": "No pending invitations. New invitations sent to your verified email will appear here.",
+    "verifyRequired": "Verify your email address to discover invitations automatically. You can still open an invitation link shared with you.",
+    "loadFailedAccount": "Could not load invitations. Please try again."
+  }
 }

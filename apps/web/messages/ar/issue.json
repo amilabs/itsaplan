@@ -108,7 +108,8 @@
     "restore": "استعادة المهمة",
     "archive": "أرشفة المهمة",
     "delete": "حذف المهمة",
-    "shareIssue": "مشاركة المهمة"
+    "shareIssue": "مشاركة المهمة",
+    "move": "نقل إلى مشروع آخر"
   },
   "actions": {
     "deleteTitle": "حذف المهمة",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "لا يمكن التراجع عن هذا.",
     "deleteDescription": "تحذف {issue}؟ ده هيشيل المهمة وتعليقاتها ونشاطها ومرفقاتها.",
     "archiveDescription": "تأرشف {issue}؟ هتخرج من اللوحة وتقدر ترجّعها بعدين.",
-    "applyDescription": "تطبّق <v>{action}</v> على المهمة دي؟"
+    "applyDescription": "تطبّق <v>{action}</v> على المهمة دي؟",
+    "moveTitle": "نقل المهمة",
+    "move": "نقل",
+    "moveDescription": "انقل {issue} إلى مشروع آخر في هذا الفريق. ستحصل على رقم جديد هناك، ويظل الرابط القديم يفتحها.",
+    "moveSubtasks": "{count, plural, one {تنتقل مهمتها الفرعية معها.} two {تنتقل مهمتاها الفرعيتان معها.} few {تنتقل مهامها الفرعية الـ # معها.} many {تنتقل مهامها الفرعية الـ # معها.} other {تنتقل مهامها الفرعية الـ # معها.}}",
+    "moveProject": "المشروع",
+    "moveChooseProject": "اختر مشروعًا",
+    "moveColumn": "الحالة",
+    "moveColumnMatching": "الحالة المطابقة",
+    "moveCarriedOver": "يُحتفظ بالنوع والتسميات والحقول المخصصة إذا كان في المشروع الهدف ما يحمل الاسم نفسه. تُزال الدورة والمبادرة والروابط إلى مهام هذا المشروع."
   },
   "create": {
     "title": "مهمة جديدة",
@@ -237,6 +247,8 @@
     "toSend": "للإرسال",
     "unknownAuthor": "غير معروف",
     "goToLastComment": "الانتقال إلى آخر تعليق",
+    "copyLink": "نسخ الرابط",
+    "linkCopied": "تم نسخ الرابط",
     "edit": "تعديل",
     "edited": "تم التعديل",
     "deleteComment": "حذف التعليق",
@@ -257,7 +269,9 @@
     "no": "لا",
     "time": "الوقت",
     "startTime": "وقت البدء",
-    "endTime": "وقت الانتهاء"
+    "endTime": "وقت الانتهاء",
+    "pickOption": "اختار خيار…",
+    "noOption": "من غير اختيار"
   },
   "editor": {
     "descriptionPlaceholder": "إضافة وصف…"
@@ -341,7 +355,8 @@
     "worklogChanged": "غيّر التسجيل من <v>{from}</v> ليوم <v>{fromDate}</v> إلى <v>{to}</v> ليوم <v>{date}</v>",
     "worklogRemoved": "حذف تسجيل <v>{time}</v> ليوم <v>{date}</v>",
     "commentEdited": "عدّل تعليقًا",
-    "commentDeleted": "حذف تعليقًا"
+    "commentDeleted": "حذف تعليقًا",
+    "issueMoved": "نقل هذه المهمة من <v>{from}</v> إلى <v>{to}</v>"
   },
   "development": {
     "title": "التطوير",
@@ -463,5 +478,91 @@
     "noAssignee": "بلا مسؤول",
     "noType": "بلا نوع",
     "noLabels": "لا شيء"
+  },
+  "agentRuns": {
+    "title": "تشغيلات الوكلاء",
+    "refresh": "Refresh",
+    "loading": "Loading runs…",
+    "loadError": "Could not load run history. Try refreshing.",
+    "empty": "No agent runs for this issue.",
+    "loadMore": "Load older runs",
+    "pending": "Pending",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "attempts": "Attempts: {count}",
+    "started": "First started: {date}",
+    "finished": "Finished: {date}",
+    "pendingHint": "This run is waiting or executing. Refresh to read its latest state.",
+    "task": "Task",
+    "error": "Last error",
+    "result": "Result",
+    "input": "Input",
+    "trace": "Latest recorded attempt",
+    "noTrace": "No execution steps have been recorded yet. Steps may appear after the trace is saved.",
+    "externalHint": "No execution transcript was recorded. Use a runner version that reports run events.",
+    "attributes": "Attributes",
+    "recordedAttempt": "Recorded attempt",
+    "latestAttempt": "Latest attempt",
+    "previousAttempt": "Previous attempt",
+    "attemptStarted": "Attempt started: {date}",
+    "duration": "{milliseconds, number} ms",
+    "triggers": {
+      "mention": "Mention",
+      "delegation": "Delegation",
+      "field": "Member field",
+      "schedule": "Schedule",
+      "manual": "Manual",
+      "status": "Status change",
+      "event": "Event"
+    },
+    "queued": "Waiting",
+    "running": "Running",
+    "queuedHint": "Waiting for a runner, a retry or its scheduled start.",
+    "queueTitle": "تشغيلات الوكلاء",
+    "internalInFlight": "الوكلاء الداخليون في مساحة العمل: {running} من {limit} قيد التشغيل",
+    "internalInFlightNoLimit": "الوكلاء الداخليون في مساحة العمل: {running} قيد التشغيل",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "In progress",
+    "historySection": "History",
+    "waitingForRunner": "Waiting for runner",
+    "offlineHint": "Waiting runs start when the runner connects.",
+    "retryAt": "Retry at {time}",
+    "startsAt": "Starts at {time}",
+    "inDuration": "in {duration}",
+    "afterAttempts": "after {count, plural, one {# attempt} other {# attempts}}",
+    "startedAgo": "started {time}",
+    "stepsSection": "What the agent did",
+    "outputTail": "The output is long: the runner sent only its end.",
+    "openWorkItem": "Open work item",
+    "scheduleRun": "Schedule: {name}",
+    "facts": {
+      "agent": "Agent",
+      "trigger": "Trigger",
+      "started": "Started",
+      "finished": "Finished",
+      "attempts": "Attempts",
+      "runner": "Runner",
+      "delivery": "Delivery",
+      "context": "Context",
+      "run": "Run"
+    },
+    "connection": {
+      "push": "Invocation URL",
+      "online": "Online",
+      "offline": "Offline",
+      "never": "Not connected"
+    },
+    "presence": {
+      "offline": "Runner offline",
+      "never": "Runner not connected"
+    },
+    "externalAttempt": "Recorded attempt {attempt}",
+    "openCodex": "Open in Codex",
+    "sessionHint": "Opens the local Codex app. The session must be available on this computer or its connected host.",
+    "traceTruncated": "The recording limit was reached. Later events are omitted; the final run result is still available.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "This run is not in your queue, or you cannot read it.",
+    "backToRuns": "Back to runs"
   }
 }

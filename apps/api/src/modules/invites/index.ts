@@ -1,40 +1,58 @@
 import { Elysia, t } from 'elysia';
 import { mcpTool } from '#mcp/generate';
 import { noContent } from '#shared/http';
+import { paginate } from '#shared/pagination';
 import { authContext } from '#shared/auth-context';
 import { guards } from '#shared/guards';
-import { requireUser, type AuthUser } from '#shared/access';
+import {
+  assertGrantablePermissions,
+  checkMemberAdmin,
+  mayGrantPermissions,
+  requireUser,
+  type AuthUser,
+} from '#shared/access';
+import { inviteValidSince } from '@repo/auth';
+import { hasConfiguredEmailProvider } from '@repo/db';
 import { HttpError } from '#shared/lib';
 import { accessErrors, commonErrors, errors } from '#shared/responses';
-import { getRole } from '#modules/roles/service';
+import { getAssignableRole } from '#modules/roles/service';
+import type { ProjectRow } from '#modules/projects/service';
 import { teamParams } from '#modules/teams/model';
 import {
+  receivedInvitesQuery,
+  ReceivedInvitePageResponse,
   AcceptInviteResponse,
   InviteCreateResponse,
   InviteEmailResponse,
   InviteRowListResponse,
-  InviteRowResponse,
   InviteViewResponse,
   createInviteBody,
   createTeamInviteBody,
+  inviteCandidatesQuery,
+  InviteCandidateListResponse,
   inviteParams,
   teamInviteParams,
   tokenParams,
 } from './model';
 import {
+  listReceivedInvites,
   createInvite,
   mayGrantInviteRanks,
   listProjectInvites,
   listTeamInvites,
+  listInviteCandidates,
+  type ListedInvite,
   deleteProjectInvite,
   deleteTeamInvite,
   getInviteById,
   getInviteByToken,
   getInviteRowByToken,
+  getInviteGrant,
+  renewInvite,
   acceptInvite,
   rejectInvite,
 } from './service';
-import { enqueueInviteEmail } from './email';
+import { enqueueInviteEmail, sendTeamInviteEmail } from './email';
 
 // Shared by accept and reject: an invite is actionable only by the account whose
 // email it names, and only while it is still pending.
@@ -43,6 +61,8 @@ async function loadActionableInvite(token: string, user: AuthUser | undefined | 
   const invite = await getInviteRowByToken(token);
   if (!invite) throw new HttpError(404, 'Invite not found');
   if (invite.status !== 'pending') throw new HttpError(409, 'This invite is no longer pending');
+  const since = await inviteValidSince();
+  if (since && invite.createdAt < since) throw new HttpError(409, 'This invite has expired');
   if ((current.email ?? '').toLowerCase() !== invite.email) {
     throw new HttpError(403, 'This invite was sent to a different email');
   }
@@ -67,9 +87,71 @@ async function assertStillGrantable(invite: {
   }
 }
 
+// What a created or renewed invite reports about its email. Without a provider nothing
+// was sent and the link is to be shared by hand; a provider whose send fails is told
+// apart, so nobody goes looking for a missing configuration.
+async function mailOutcome(send: () => Promise<boolean>) {
+  if (!(await hasConfiguredEmailProvider())) return { emailQueued: false, emailFailed: false };
+  try {
+    const sent = await send();
+    return { emailQueued: sent, emailFailed: !sent };
+  } catch (err) {
+    console.error('[invites] invite email failed:', err);
+    return { emailQueued: false, emailFailed: true };
+  }
+}
+
+// A link hands out its invite's role to whoever holds it, so a viewer who could not grant
+// that role does not get the link either.
+async function hideLinksBeyondGrant(
+  project: ProjectRow,
+  viewer: AuthUser,
+  invites: ListedInvite[],
+): Promise<ListedInvite[]> {
+  const grantable = new Map<number, boolean>();
+  return Promise.all(
+    invites.map(async (invite) => {
+      if (!invite.token || invite.roleId == null) return invite;
+      if (!grantable.has(invite.roleId)) {
+        const role = await getAssignableRole(project.teamId, invite.roleId);
+        grantable.set(
+          invite.roleId,
+          !role || (await mayGrantPermissions(project, viewer, role.permissions)),
+        );
+      }
+      return grantable.get(invite.roleId) ? invite : { ...invite, token: null };
+    }),
+  );
+}
+
 export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invites'] } })
   .use(authContext)
   .use(guards)
+
+  .get(
+    '/me/invites',
+    async ({ user, query, set }) => {
+      set.headers['cache-control'] = 'private, no-store';
+      return paginate(query, (window) =>
+        listReceivedInvites(requireUser(user).email ?? '', window),
+      );
+    },
+    {
+      beforeHandle: ({ user }) => {
+        requireUser(user);
+        if (!user?.emailVerified || !user.email) {
+          throw new HttpError(403, 'Confirm your email before viewing invitations');
+        }
+      },
+      query: receivedInvitesQuery,
+      response: { 200: ReceivedInvitePageResponse, ...errors(400, 401, 403) },
+      detail: {
+        summary: 'List invitations received by your verified email',
+        description:
+          'Pending, unexpired invitations for the signed-in account. Open an invitation to review its role and explicitly accept or decline it.',
+      },
+    },
+  )
 
   .post(
     '/projects/:projectKey/invites',
@@ -95,12 +177,13 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
         );
       }
       // For a member invite, an explicit roleId must name a role of this project's
-      // team; null (or omitted) falls back to the team's default role on accept. An
+      // team or a system role; null (or omitted) falls back to the default role on accept. An
       // owner invite ignores roleId (owners bypass roles).
       const roleId = body.role === 'member' ? (body.roleId ?? null) : null;
       if (roleId != null) {
-        const role = await getRole(project.teamId, roleId);
+        const role = await getAssignableRole(project.teamId, roleId);
         if (!role) throw new HttpError(400, "roleId does not belong to this project's team");
+        await assertGrantablePermissions(project, user, role.permissions);
       }
       const invite = await createInvite({
         teamId: project.teamId,
@@ -113,16 +196,11 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
         roleId,
         invitedByUserId: invitedBy,
       });
-      let emailQueued = false;
-      try {
-        emailQueued = await enqueueInviteEmail(project, invite);
-      } catch (err) {
-        // Creating the invite link is the primary operation. A transient outbox
-        // failure must not discard a valid link that can still be copied.
-        console.error('[invites] email enqueue failed:', err);
-      }
+      // Creating the invite link is the primary operation: a failed email must not
+      // discard a valid link that can still be copied.
+      const email = await mailOutcome(() => enqueueInviteEmail(project, invite));
       set.status = 201;
-      return { ...invite, emailQueued };
+      return { ...invite, ...email };
     },
     {
       body: createInviteBody,
@@ -133,7 +211,8 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
         description:
           'Create an invite link for an email and role (owner or member). For a member, roleId ' +
           "picks the custom role, or null for the default role. Accepting it joins the project's " +
-          'team as well. Queues an email when the instance email provider is configured.',
+          'team as well. Queues an email when the instance email provider is configured; ' +
+          'emailFailed reports an email the provider could not send, the link still valid.',
         ...mcpTool('create_invite'),
       },
     },
@@ -149,6 +228,10 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
       if (invite.status !== 'pending') {
         throw new HttpError(409, 'This invite is no longer pending');
       }
+      // Mailing a dead link only leads the invitee to an error; renewing sends a live one.
+      if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+        throw new HttpError(409, 'This invite has expired. Renew it to send a new link.');
+      }
       return { emailQueued: await enqueueInviteEmail(project, invite) };
     },
     {
@@ -159,21 +242,67 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
         summary: 'Send an invite email',
         description:
           'Queue an email for a pending project invite. Returns false when the instance email ' +
-          'provider is not configured.',
+          'provider is not configured. An expired invite is refused: renew it instead.',
         ...mcpTool('send_invite_email'),
+      },
+    },
+  )
+
+  .post(
+    '/projects/:projectKey/invites/:inviteId/renew',
+    async ({ project, params, user, set }) => {
+      const renewedBy = requireUser(user).id;
+      const grant = await getInviteGrant(params.inviteId);
+      if (!grant || grant.projectId !== project.id) throw new HttpError(404, 'Invite not found');
+      // Renewing hands the grant out again, so it is held to the same rules as creating it.
+      if (!(await mayGrantInviteRanks(grant, renewedBy))) {
+        throw new HttpError(
+          403,
+          'Only a project owner or a team owner or manager can invite an owner',
+        );
+      }
+      if (grant.roleId != null) {
+        const role = await getAssignableRole(project.teamId, grant.roleId);
+        if (role) await assertGrantablePermissions(project, user, role.permissions);
+      }
+      const invite = await renewInvite(grant, renewedBy);
+      const email = await mailOutcome(() => enqueueInviteEmail(project, invite));
+      set.status = 201;
+      return { ...invite, ...email };
+    },
+    {
+      params: inviteParams,
+      memberAdmin: ['members_invite', 'create'],
+      response: { 201: InviteCreateResponse, ...commonErrors, ...errors(409) },
+      detail: {
+        summary: 'Renew an expired invite',
+        description:
+          'Replace an expired project invite with a new one for the same email and role: a new ' +
+          'link, valid again for the instance invite lifetime. Emails it when the instance ' +
+          'email provider is configured. An invite that has not expired is refused.',
+        ...mcpTool('renew_invite'),
       },
     },
   )
 
   .get(
     '/projects/:projectKey/invites',
-    async ({ project }) => {
-      return listProjectInvites(project.id);
+    async ({ project, user }) => {
+      const viewer = requireUser(user);
+      const mayInvite = await checkMemberAdmin(project, viewer, 'members_invite', 'create');
+      const invites = await listProjectInvites(project.id, mayInvite ? viewer.id : null);
+      return hideLinksBeyondGrant(project, viewer, invites);
     },
     {
       memberAdmin: ['members_invite', 'read'],
       response: { 200: InviteRowListResponse, ...accessErrors },
-      detail: { summary: "List a project's invites", ...mcpTool('list_invites') },
+      detail: {
+        summary: "List a project's invites",
+        description:
+          'The token is null on an invite the caller could not have sent: without permission ' +
+          'to create invites, or on an owner invite the caller may not grant.',
+        ...mcpTool('list_invites'),
+      },
     },
   )
 
@@ -218,19 +347,23 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
         roleId: null,
         invitedByUserId: membership.userId,
       });
+      // As for a project invite: the link is the primary result and stays valid.
+      const email = await mailOutcome(() => sendTeamInviteEmail(membership.teamId, invite));
       set.status = 201;
-      return invite;
+      return { ...invite, ...email };
     },
     {
       teamManager: true,
       params: teamParams,
       body: createTeamInviteBody,
-      response: { 201: InviteRowResponse, ...errors(400, 401, 403, 404, 409) },
+      response: { 201: InviteCreateResponse, ...errors(400, 401, 403, 404, 409) },
       detail: {
         summary: 'Invite someone to a team',
         description:
           'Create an invite link into the team, as a member, a manager or an owner. Only an ' +
-          'owner can invite a manager or another owner.',
+          'owner can invite a manager or another owner. Emails the link when the instance ' +
+          'email provider is configured; emailFailed reports an email the provider could not ' +
+          'send, the link still valid.',
       },
     },
   )
@@ -238,7 +371,7 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
   .get(
     '/teams/:teamId/invites',
     async ({ membership }) => {
-      return listTeamInvites(membership.teamId);
+      return listTeamInvites(membership.teamId, membership.userId);
     },
     {
       teamManager: true,
@@ -247,7 +380,112 @@ export const inviteRoutes = new Elysia({ name: 'invites', detail: { tags: ['Invi
       detail: {
         summary: "List a team's invites",
         description:
-          'Every invite into the team, including the ones that also name one of its projects.',
+          'Every invite into the team, including the ones that also name one of its projects. ' +
+          'The token is null on an invite granting a rank only a team owner may grant.',
+      },
+    },
+  )
+
+  .get(
+    '/teams/:teamId/invites/candidates',
+    ({ membership, query }) => listInviteCandidates(membership.teamId, query.search),
+    {
+      teamManager: true,
+      params: teamParams,
+      query: inviteCandidatesQuery,
+      response: { 200: InviteCandidateListResponse, ...commonErrors },
+      detail: {
+        summary: 'Search people to invite to a team',
+        description:
+          'Up to 8 accounts of the instance whose name or address contains the search, ' +
+          'leaving out the members of the team and the AI agents. Whoever may invite to the ' +
+          'team may search, while the instance owner has the search turned on.',
+      },
+    },
+  )
+
+  // The team list also shows the invites that name one of its projects, so this mails
+  // those too, as their project would.
+  .post(
+    '/teams/:teamId/invites/:inviteId/email',
+    async ({ membership, params }) => {
+      const grant = await getInviteGrant(params.inviteId);
+      if (!grant || grant.teamId !== membership.teamId) {
+        throw new HttpError(404, 'Invite not found');
+      }
+      const invite = await getInviteById(params.inviteId);
+      if (!invite) throw new HttpError(404, 'Invite not found');
+      if (invite.status !== 'pending') {
+        throw new HttpError(409, 'This invite is no longer pending');
+      }
+      if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
+        throw new HttpError(409, 'This invite has expired. Renew it to send a new link.');
+      }
+      // Without a provider there is nothing to send, and the caller is told to share the
+      // link; a provider that fails is an error, not that.
+      if (!(await hasConfiguredEmailProvider())) return { emailQueued: false };
+      if (grant.projectId == null) {
+        if (!(await sendTeamInviteEmail(membership.teamId, invite))) {
+          throw new HttpError(502, 'The invite email could not be sent');
+        }
+        return { emailQueued: true };
+      }
+      if (invite.projectName == null) return { emailQueued: false };
+      return {
+        emailQueued: await enqueueInviteEmail(
+          { id: grant.projectId, name: invite.projectName },
+          invite,
+        ),
+      };
+    },
+    {
+      teamManager: true,
+      params: teamInviteParams,
+      response: { 200: InviteEmailResponse, ...errors(401, 403, 404, 409, 502) },
+      detail: {
+        summary: 'Send an invite email of the team',
+        description:
+          'Email a pending invite into the team, or into one of its projects, again: the same ' +
+          'link. Returns false when the instance email provider is not configured, and 502 when ' +
+          'it is configured but the email to the team alone could not be sent. An expired ' +
+          'invite is refused: renew it instead.',
+      },
+    },
+  )
+
+  // The team list also shows the invites that name one of its projects, so this renews
+  // those too, mailing them as their project would.
+  .post(
+    '/teams/:teamId/invites/:inviteId/renew',
+    async ({ membership, params, set }) => {
+      const grant = await getInviteGrant(params.inviteId);
+      if (!grant || grant.teamId !== membership.teamId) {
+        throw new HttpError(404, 'Invite not found');
+      }
+      if (!(await mayGrantInviteRanks(grant, membership.userId))) {
+        throw new HttpError(403, 'Only a team owner can invite an owner or a manager');
+      }
+      const invite = await renewInvite(grant, membership.userId);
+      const { projectId } = grant;
+      const projectName = invite.projectName;
+      const email = await mailOutcome(async () => {
+        if (projectId == null) return sendTeamInviteEmail(membership.teamId, invite);
+        if (projectName == null) return false;
+        return enqueueInviteEmail({ id: projectId, name: projectName }, invite);
+      });
+      set.status = 201;
+      return { ...invite, ...email };
+    },
+    {
+      teamManager: true,
+      params: teamInviteParams,
+      response: { 201: InviteCreateResponse, ...errors(400, 401, 403, 404, 409) },
+      detail: {
+        summary: 'Renew an expired invite of the team',
+        description:
+          'Replace an expired invite into the team, or into one of its projects, with a new one ' +
+          'for the same email and rank: a new link, valid again for the instance invite ' +
+          'lifetime. Emails it when the instance email provider is configured.',
       },
     },
   )

@@ -108,7 +108,8 @@
     "restore": "Відновити задачу",
     "archive": "Архівувати задачу",
     "delete": "Видалити задачу",
-    "shareIssue": "Поділитися задачею"
+    "shareIssue": "Поділитися задачею",
+    "move": "Перенести в інший проєкт"
   },
   "actions": {
     "deleteTitle": "Видалити задачу",
@@ -117,7 +118,16 @@
     "cannotBeUndone": "Цю дію не можна скасувати.",
     "deleteDescription": "Видалити {issue}? Разом з нею буде видалено коментарі, активність і вкладення.",
     "archiveDescription": "Архівувати {issue}? Вона зникне з дошки, її можна буде відновити пізніше.",
-    "applyDescription": "Застосувати <v>{action}</v> до цієї задачі?"
+    "applyDescription": "Застосувати <v>{action}</v> до цієї задачі?",
+    "moveTitle": "Перенести задачу",
+    "move": "Перенести",
+    "moveDescription": "Перенести {issue} в інший проєкт цієї команди. Там задача отримає новий номер, а старе посилання й далі її відкриватиме.",
+    "moveSubtasks": "{count, plural, one {# підзадача переноситься разом із нею.} few {# підзадачі переносяться разом із нею.} many {# підзадач переносяться разом із нею.} other {# підзадачі переносяться разом із нею.}}",
+    "moveProject": "Проєкт",
+    "moveChooseProject": "Виберіть проєкт",
+    "moveColumn": "Статус",
+    "moveColumnMatching": "Відповідний статус",
+    "moveCarriedOver": "Тип, мітки та користувацькі поля зберігаються, якщо в цільовому проєкті є такі самі за назвою. Цикл, ініціатива та зв’язки із задачами цього проєкту видаляються."
   },
   "create": {
     "title": "Нова задача",
@@ -237,6 +247,8 @@
     "toSend": "щоб надіслати",
     "unknownAuthor": "Невідомий",
     "goToLastComment": "Перейти до останнього коментаря",
+    "copyLink": "Копіювати посилання",
+    "linkCopied": "Посилання скопійовано",
     "edit": "Редагувати",
     "edited": "змінено",
     "deleteComment": "Видалити коментар",
@@ -257,7 +269,9 @@
     "no": "Ні",
     "time": "Час",
     "startTime": "Початок",
-    "endTime": "Завершення"
+    "endTime": "Завершення",
+    "pickOption": "Виберіть варіант…",
+    "noOption": "Не вибрано"
   },
   "editor": {
     "descriptionPlaceholder": "Додайте опис…"
@@ -341,7 +355,8 @@
     "worklogChanged": "змінив(-ла) запис <v>{from}</v> за <v>{fromDate}</v> на <v>{to}</v> за <v>{date}</v>",
     "worklogRemoved": "видалив(-ла) запис <v>{time}</v> за <v>{date}</v>",
     "commentEdited": "змінив коментар",
-    "commentDeleted": "видалив коментар"
+    "commentDeleted": "видалив коментар",
+    "issueMoved": "переніс задачу з <v>{from}</v> до <v>{to}</v>"
   },
   "development": {
     "title": "Розробка",
@@ -463,5 +478,91 @@
     "noAssignee": "Без виконавця",
     "noType": "Без типу",
     "noLabels": "Немає"
+  },
+  "agentRuns": {
+    "title": "Запуски агентів",
+    "refresh": "Refresh",
+    "loading": "Loading runs…",
+    "loadError": "Could not load run history. Try refreshing.",
+    "empty": "No agent runs for this issue.",
+    "loadMore": "Load older runs",
+    "pending": "Pending",
+    "success": "Succeeded",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "attempts": "Attempts: {count}",
+    "started": "First started: {date}",
+    "finished": "Finished: {date}",
+    "pendingHint": "This run is waiting or executing. Refresh to read its latest state.",
+    "task": "Task",
+    "error": "Last error",
+    "result": "Result",
+    "input": "Input",
+    "trace": "Latest recorded attempt",
+    "noTrace": "No execution steps have been recorded yet. Steps may appear after the trace is saved.",
+    "externalHint": "No execution transcript was recorded. Use a runner version that reports run events.",
+    "attributes": "Attributes",
+    "recordedAttempt": "Recorded attempt",
+    "latestAttempt": "Latest attempt",
+    "previousAttempt": "Previous attempt",
+    "attemptStarted": "Attempt started: {date}",
+    "duration": "{milliseconds, number} ms",
+    "triggers": {
+      "mention": "Mention",
+      "delegation": "Delegation",
+      "field": "Member field",
+      "schedule": "Schedule",
+      "manual": "Manual",
+      "status": "Status change",
+      "event": "Event"
+    },
+    "queued": "Waiting",
+    "running": "Running",
+    "queuedHint": "Waiting for a runner, a retry or its scheduled start.",
+    "queueTitle": "Запуски агентів",
+    "internalInFlight": "Внутрішні агенти воркспейсу: у роботі {running} з {limit}",
+    "internalInFlightNoLimit": "Внутрішні агенти воркспейсу: у роботі {running}",
+    "queueEmpty": "No runs yet.",
+    "activeSection": "In progress",
+    "historySection": "History",
+    "waitingForRunner": "Waiting for runner",
+    "offlineHint": "Waiting runs start when the runner connects.",
+    "retryAt": "Retry at {time}",
+    "startsAt": "Starts at {time}",
+    "inDuration": "in {duration}",
+    "afterAttempts": "after {count, plural, one {# attempt} other {# attempts}}",
+    "startedAgo": "started {time}",
+    "stepsSection": "What the agent did",
+    "outputTail": "The output is long: the runner sent only its end.",
+    "openWorkItem": "Open work item",
+    "scheduleRun": "Schedule: {name}",
+    "facts": {
+      "agent": "Agent",
+      "trigger": "Trigger",
+      "started": "Started",
+      "finished": "Finished",
+      "attempts": "Attempts",
+      "runner": "Runner",
+      "delivery": "Delivery",
+      "context": "Context",
+      "run": "Run"
+    },
+    "connection": {
+      "push": "Invocation URL",
+      "online": "Online",
+      "offline": "Offline",
+      "never": "Not connected"
+    },
+    "presence": {
+      "offline": "Runner offline",
+      "never": "Runner not connected"
+    },
+    "externalAttempt": "Recorded attempt {attempt}",
+    "openCodex": "Open in Codex",
+    "sessionHint": "Opens the local Codex app. The session must be available on this computer or its connected host.",
+    "traceTruncated": "The recording limit was reached. Later events are omitted; the final run result is still available.",
+    "selectRun": "Select a run to see its details",
+    "runNotFound": "This run is not in your queue, or you cannot read it.",
+    "backToRuns": "Back to runs"
   }
 }

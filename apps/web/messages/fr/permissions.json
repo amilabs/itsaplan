@@ -17,6 +17,7 @@
     "integrations": "Intégrations",
     "agent_skills": "Compétences des agents",
     "agent_tools": "Outils des agents",
+    "agent_usage": "Consommation des agents",
     "custom_fields": "Champs personnalisés",
     "issue_templates": "Modèles de tickets",
     "workflow_config": "Configuration du flux de travail",
@@ -48,5 +49,16 @@
   "allowed": "autorisé",
   "notAllowed": "non autorisé",
   "accessHeading": "Accès à ce projet",
-  "joined": "arrivé {date}"
+  "joined": "arrivé {date}",
+  "editor": {
+    "titleEdit": "Modifier le rôle",
+    "titleNew": "Nouveau rôle",
+    "namePlaceholder": "ex. Contributeur",
+    "toggleActionAll": "Basculer {action} pour toutes les ressources",
+    "toggleGroupAll": "Basculer toutes les permissions de {group}",
+    "toggleActionGroup": "Basculer {action} pour {group}",
+    "cellAria": "{resource} : {action}",
+    "saveRole": "Enregistrer le rôle",
+    "createRole": "Créer le rôle"
+  }
 }

@@ -74,7 +74,10 @@ Rules and invariants for this package below; read the code for the walkthrough.
 - **jsonb** (view `filters`/`display`, action `condition`/`effect`) passes through as
   JS objects — never `JSON.stringify`; validate only as `t.Any()`.
 - **Sequence numbers** ("MKT-42") are issued under a row lock on `project` inside
-  `createIssue`'s transaction — keep the lock so concurrent creates don't collide.
+  the transaction of `createIssue` and of `moveIssue` (`issues/move.ts`) — keep the
+  lock so concurrent writes don't collide. A moved issue's old number goes to
+  `issue_key_alias`, and `getIssueBySequence` resolves it to the issue in its new
+  project. The counter never goes back, so an alias never collides with an issue.
 - **`position` is a sparse float** (`MAX(position) + 1000`); do not assume contiguous
   integers.
 - **Deletes cascade in the DB** (every project/issue-scoped FK is `ON DELETE CASCADE`).
@@ -102,10 +105,26 @@ Enforced declaratively through macros, never imperative calls in handlers.
 - **Session:** `authContext` (named plugin) reads the better-auth session once, puts
   `user` on context, throws 401 with none. `planner.ts` gates every planner route;
   a feature also `.use(authContext)` when its handlers/macros reference `user`. An
-  `x-api-key` header resolves through `getSession` — no special-casing.
-- **Membership:** access is strictly by a `project_member` row (`owner` | `member`).
-  Owners bypass the permission matrix; the global `user.role` (`god` | `user`) does
-  **not**. Keep at least one owner per project.
+  `x-api-key` header resolves through `getSession` — no special-casing. A route outside
+  the planner that answers without credentials (`/me`) reads the same account through
+  `requestUser`, which also takes the MCP OAuth token of a tool call. `authContext`
+  also writes `user.last_seen_at` for god's "Last seen", at most once an hour per
+  account; `requestUser` alone does not.
+- **Membership:** access is by a `project_member` row (`owner` | `member`), raised by
+  the caller's role in the workspace that holds the project. Owners bypass the
+  permission matrix; the global `user.role` (`god` | `user`) does **not**. Keep at least
+  one owner per project.
+- **Workspace roles reach every team and project of the workspace** without a membership
+  row: the owner as an owner of each, an admin with a matrix that only reads. The table
+  is `shared/workspace-roles.ts`; `setWorkspaceRoleGrant(role, grant)` changes what a role
+  grants or adds a role, for a build that has more. `getProjectAccess` and
+  `getTeamAccess` in `shared/access.ts` merge the membership with the grant, and every
+  guard reads them. The lists that decide what the caller sees — `listProjects`, the
+  team list, `readRevs` — take the reached teams the same way, and answer `via:
+'workspace'` for what the caller reaches only through the workspace. Everything that
+  asks whether _someone else_ is a member — assignees, mentions, watchers, notification
+  recipients, seats, the last-owner check, SCIM — still reads the rows, so a workspace
+  manager is in none of the member lists, gets no notifications and takes no seat.
 - **`:projectKey` routes:** `.use(guards)` and set `permission: ["<resource>",
 "<action>"]` / `projectMember: true` / `projectOwner: true`; read the resolved
   `project` from context.
@@ -113,19 +132,59 @@ Enforced declaratively through macros, never imperative calls in handlers.
   macro via `entityGuard(resource, notFound, resolveProjectId)` and set it in route
   options (e.g. `workItem: "edit"`). `GET /issues/:issueId` instead asserts
   `assertPermission` on the fetched row, and spreads `requiresPermission([...])` into its
-  `detail` so the MCP tool table still reports what it requires.
+  `detail` so the MCP tool table still reports what it requires. `GET
+/projects/:projectKey/issues/:sequenceNumber` does the same for an old number that
+  resolved to an issue now in another project. `POST /issues/:issueId/move` checks the
+  target project in the `moveTarget` macro, which reads `projectId` from the body.
+  `entityGuard` calls `assertMcpAllowed`, and so does a route that resolves the project
+  itself: it applies the per-project MCP toggle, and refuses an object outside
+  the project an internal agent's run works in (`x-agent-project`, set by the run's tool
+  dispatch).
 - Every guard publishes the pair it asserts as `x-permission` on the route's OpenAPI
   detail, which is where `mcp/generate.ts` reads it — Elysia deletes a macro's own key
   from the route once it expands the macro, so there is nothing else to read it from.
 - Guards/macros wrap the `shared/access.ts` primitives. Handlers that still need
   `user` (project create, invite accept/reject, self-removal) call `requireUser(user)`.
+- **The workspace decides who creates a team in it** (`POST /teams`, `createTeam` in
+  `teams/service.ts`, `assertMayCreateTeam` in `workspaces/service.ts`): its owner by
+  default, also its admins, or anyone in one of its teams, as its owner sets
+  `teamCreation`. `workspaceId` in the body names the workspace and is required. Anyone
+  else gets 403.
+- **Every person owns one workspace.** No route creates one: sign-up makes it
+  (`@repo/auth`), and `authContext` makes it on the next request for an account that has
+  none (`ensurePersonalWorkspace`): the instance owner always, anyone else while
+  `personalWorkspaces` is on in the auth settings. There is no shared workspace; every
+  team is in the workspace of its owner.
+  A build that lets a person own more mounts its own route on `createOwnWorkspace` and
+  `workspaceCreation` (`workspaces/service.ts`, which refuse an agent's bot user) and
+  raises the number with `setOwnedWorkspaceLimit` (`shared/limits.ts`). When an account is deleted (`deleteAccount`), a workspace it
+  owned goes with it while it holds no project and no AI agent; any other passes to the
+  instance owner with what the account owned alone in it (`releaseOwnedWorkspaces` in
+  `teams/service.ts`). God mode asks about sole-owned projects only outside the account's
+  own workspaces. The owner deletes a workspace under the same rule
+  (`DELETE /workspaces/:id`, `workspaceDeletion` in `workspaces/service.ts`). No core
+  route hands a workspace over; `transferWorkspace` is there for a build that offers it.
+  SCIM provisioning creates and attaches accounts across the instance, so it is set up in
+  god mode (`/god/scim`); a hosted build also sets it up per workspace with
+  `setWorkspaceScim()` from `@repo/auth`, whose routes (`workspaceScim` guard) are each
+  workspace owner's (see SCIM below).
 - **A member of the team joins a project directly** (`POST /projects/:key/members`,
   from the candidate list); anyone else joins through an invite, which puts them in
-  the team as well. A team invite (`/teams/:teamId/invites`) names no project. One
+  the team as well. A team invite (`/teams/:teamId/invites`) names no project, so its
+  email cannot go through the notification outbox, which belongs to a project:
+  `invites/email.ts` sends it at once, without the outbox's retries. One
   pending invite per (team, email) and per (project, email) — partial unique indexes →
   409, and so is an address already in the team or in the project: accepting such an
   invite would rewrite the membership it already holds, demoting an owner past the
-  last-owner check. `members/` removes (last owner protected).
+  last-owner check. An expired invite gives way: inviting the address again, or
+  renewing it (`.../invites/:inviteId/renew`), replaces it with a new invite under a new
+  link. A link is never reissued, and an expired one is neither accepted nor mailed.
+  An address takes an invite only where the installed policy admits it
+  (`invites/email-policy.ts`, 400 `EMAIL_DOMAIN_NOT_ALLOWED`): by default, one with an
+  account always and one without only if it could register. A build that lets a
+  workspace keep domains of its own calls `setInviteEmailPolicy` with a check against them.
+  The invite dialog's suggestions (`.../invites/candidates`) leave out whom it refuses.
+  `members/` removes (last owner protected).
 - The member list of a project is governed by its role matrix **or** by the team that
   owns it: `memberAdmin: ["members_manage", "<action>"]` passes an owner or manager of
   the team without a `project_member` row of their own, and every member route uses it
@@ -133,13 +192,19 @@ Enforced declaratively through macros, never imperative calls in handlers.
   `:userId` use `memberSelfOrAdmin` instead: that member acts on their own row —
   leaving the project, saying what they do in it — with no member permission at all.
   The one standing the member permission does not carry is `owner`: an owner bypasses
-  the matrix, so adding one, promoting to one and *inviting* one all go through the
+  the matrix, so adding one, promoting to one and _inviting_ one all go through the
   same rule — an owner of the project, or an owner or manager of the team that owns it
   (`assertProjectAdmin`, and `mayGrantInviteRanks` for the invite). The team rank is
   stricter still: only a team owner grants, takes or invites `owner` and `manager`
   there. An invite is checked against its sender twice, once when it is made and again
   when it is accepted: the sender can be demoted or deleted while the link is out, and
   a link must not outlive the standing that issued it (409 on accept).
+  A custom role is capped the same way: adding, re-roling, inviting or renewing an invite
+  with a `roleId` goes through `assertGrantablePermissions`, which refuses a role that
+  grants more than the granter holds, and the project's invite list hides the link of
+  an invite whose role the viewer could not grant. A project owner, or an owner or
+  manager of the team, is not capped. Demoting or removing an owner needs
+  `assertProjectAdmin`.
 - `project_member.source` says which path a row came from: `modules/scim/reconcile.ts`
   only ever writes, re-roles or removes its own `'scim'` rows, and `members/` refuses to
   edit or remove one (409) because the next sync would undo the change. A project
@@ -164,10 +229,61 @@ Two decisions a reader would otherwise propose again:
   flag on the user. An agent is reachable through its team or not at all.
 - **The `ai_agents` permissions are administrative.** A role granting `create` or `edit`
   can make an agent, attach it to the projects the caller sees, and read its key — so
-  granting either is granting everything an agent of those projects can reach.
+  granting either is granting everything an agent of those projects can reach. Rotating
+  the key, editing or deleting the agent, setting its tools or skills, and reading,
+  rotating or testing its invocation secret act on it in every project it works in, so
+  they also take running the team or being a member of all of them
+  (`assertFullAgentAccess`). The agent's `canManage` reports the same rule to the caller,
+  so the web hides what the api would refuse. What the agents spent is a resource of its own,
+  `agent_usage`, read only, so reading it administers nothing.
 - **An agent's role is its `project_member` row**, per project, set from the project's
-  member list like a person's. Attaching an agent joins it on the team's default role;
+  member list like a person's. Attaching an agent joins it on the default system role;
   `members/` refuses to make it an owner, since an owner bypasses the matrix.
+
+Runs of an internal agent are traced. `runtime/observability.ts` holds the one Mastra
+container of the process: an agent built for a run writes no spans on its own, so every
+one is registered with it, and its exporter writes the spans into Mastra's own table on
+the application database. A run names what it belongs to in the trace metadata — the
+agent, the team, the project, the issue and the schedule, and either the queued run with
+its trigger or, for a chat run, the person who asked — which is what `runtime/traces.ts`
+filters on, since the spans carry no foreign keys of ours. How long they are kept is the
+instance setting under god mode (`app_setting` key `agents`); `runtime/trace-retention.ts`
+applies it from the api's background loop. The window applies to whole runs: the sweep
+finds the root spans past it and deletes their traces whole, and the same sweep drops
+the traces of a deleted team.
+
+The same setting holds the longest one run may take (`maxRunSeconds`). An agent can set a
+shorter limit of its own (`ai_agent.run_timeout_sec`), and a workspace ceiling from
+`setLimitsProvider` lowers both. A run that reaches it is aborted and saved as failed with
+the text it had produced. A claim's lease is kept longer than the instance maximum, so the
+poller does not claim a run again while it is still running.
+
+The run traces also back the agent dashboard (`runtime/analytics.ts`) at
+`GET /teams/:teamId/agent-analytics`: runs, tokens and cost by model, agent, project and
+day, over a window and the same span before it. Its owner and managers read every project
+of the team; anyone else the projects where their role grants `agent_usage` `read`
+(`projectsWithPermission` in `shared/access.ts`), since a role is set per project and a
+team-wide figure would show the others. The response names those projects
+(`readableProjects`), and `projectId` narrows the dashboard to one of them.
+`GET /workspaces/:workspaceId/agent-analytics` reads it over every team of a workspace,
+with the teams compared, for its owner and its admins.
+
+Cost is applied in the api, not read from a span. Mastra computes it in a metrics
+pipeline that needs an analytics store its Postgres adapter does not implement, so the
+spans arrive with raw token counts and `runtime/model-pricing.ts` prices them from the
+table `@mastra/observability` bundles for that pipeline (`dist/metrics/pricing-data.json`).
+Its provider ids are the registry `AI_PROVIDERS` mirrors, so a credential's integration
+key matches it directly. The file is outside the package's exports map: a release that
+moves it leaves the table empty, an unpriced call reports no cost, and the dashboard shows
+the tokens without an amount.
+
+A workspace sets its own price for any model in `model_price`, which the dashboards of its
+teams read before the table (`ownPrices` in `analytics.ts`): a model the table lacks, such
+as one behind an OpenAI-compatible proxy, or one bought at another rate. The cost is
+worked out when a dashboard is read, so a price also recounts past calls.
+`modules/agents/prices` serves the list to the workspace's owner and its admins: the
+models it called in the last 90 days with those no price covers first, and the whole
+table, paged, each beside the workspace's own price.
 
 Over MCP the team is resolved from the API key rather than asked for (`mcp/server.ts`):
 an agent's key acts in its own team, a person with one team in theirs, and a person in
@@ -181,14 +297,67 @@ carries `teamMcpEnabled` from the join it already makes. The team guards check t
 switch through `assertTeamMcpAllowed`, which is what covers the resources no project
 flag reaches: the agents, the skills, the tools, the roles and the credentials.
 
+## Extension hooks
+
+A build that extends the api, such as the hosted edition, installs these at startup
+before `listen`. A self-hosted instance installs none and runs the defaults. The schedule
+and run setters put their default back when called with no argument, which is how a test
+undoes one.
+
+- `setLimitsProvider`, `setOwnedWorkspaceLimit` (`shared/limits.ts`): a workspace's
+  ceilings.
+- `setScheduleTypes`, `setScheduleOptionsCheck`, `setScheduleIssueFilter`
+  (`modules/agents/schedules/extension.ts`): schedule types of its own beside `cron` and
+  `status`; the `options` it keeps on a schedule, checked on every write and, with the id
+  maps, on a project copy; and which issues start a schedule's run. `queueScheduleRuns`
+  (`issue-runs.ts`) queues the runs of its types on issues, with the trigger `event`. A
+  schedule of a type or with options no installed extension reads (`isScheduleSupported`)
+  stays as it is, so it works again once the extension is back, but starts no run and
+  answers 409 to an update; only a delete goes through.
+- `setRunAdmission` (`modules/agents/core/run-admission.ts`): the seconds a claimed run
+  waits before it starts, asked in the poller and in a runner's claim.
+- `setRunRefusal` (`modules/agents/core/run-refusal.ts`): whether an internal agent works
+  at all, asked in the poller before a queued run starts and in `prepareRun` before a chat
+  answer. A reason fails the run without a retry, and answers the chat with 403.
+- `onProjectEvent` (`modules/webhooks/emit.ts`): every event the webhooks get, inside the
+  request or the run that caused it: the issues and comments, and `agent_run.finished`
+  once a run ends, whose `emitRunsCanceled` (`modules/agents/core/run-finished.ts`)
+  serves a build that cancels runs of its own.
+- `setRequestTracker` (`shared/request-tracker.ts`): every request, with its declared
+  route, params and body, before the guards run; a request it follows gets its status,
+  its account and the handler's value back after the handler, before the answer is sent,
+  or the status of the error a guard or the handler refused or failed it with.
+
+Functions with no setter, for the routes such a build adds:
+
+- `getAgentAnalytics({ teamIds, projectIds }, days)`
+  (`modules/agents/core/runtime/analytics.ts`): the agent dashboard over any set of
+  teams, or some of their projects.
+- `tracedRuns(scope, from)`, `analyticsWindow(days)` (same file): the runs the dashboard
+  is read from, with the whole trace metadata, and its window, for figures of the
+  build's own.
+- `workspaceScope(workspaceId)`, `onlyProject(scope, projectId)` (same file): the scope
+  of the workspace dashboard, and a scope narrowed to one project as the team dashboard
+  does it.
+- `estimateCost(provider, model, usage, calls, own)` (`runtime/model-pricing.ts`): what
+  model calls cost, with `own` from `ownPrices(scope)` (`analytics.ts`) so a workspace's
+  prices count.
+- `projectsWithPermission` (`shared/access.ts`): the projects a member may read.
+- `createIssue(project, input, null)` (`modules/issues/service.ts`): an issue no account
+  created, such as one a person files through a page the build serves to anyone.
+- `createComment({ issueId, body, authorName })` (`modules/issues/activity.ts`): a comment
+  from someone without an account, named `authorName`. Its mentions reach nobody.
+
 ## SCIM
 
 `modules/scim/` serves SCIM 2.0 (RFC 7643 / 7644) at `/scim/v2` for an identity provider
 to provision users and groups with. Three things make it unlike every other module:
 
 - **Mounted on the root app in `app.ts`, not under `planner`.** The planner's `authContext`
-  answers 401 before the bearer check could run. Authentication is one `onBeforeHandle`
-  against the instance SCIM token from `@repo/auth`.
+  answers 401 before the bearer check could run. Authentication is one `resolve` that hands
+  the token to `verifyScimToken` from `@repo/auth`, which answers with the provider the
+  token belongs to: the instance's (`workspaceId` null) or a workspace's. Every route acts
+  for that provider, and every function in `service.ts` takes its `workspaceId`.
 - **Its own error document.** `onError` sits on a parent instance that `.use()`s the routes
   and answers only for paths under `/scim/v2`, handing everything else back to the planner's
   handler. Two reasons for that shape: an `onError` beside the routes widens the inferred
@@ -203,12 +372,58 @@ Filtering is `<attribute> eq "<value>"` only, over the attributes each resource 
 `service.ts`; that is what Okta, Entra and Authentik send, and `ServiceProviderConfig`
 advertises exactly that. A create inserts the `user` row directly, the way `createAgent`
 does, which deliberately skips the registration gate — with SCIM on, the identity provider
-decides who exists, and that is what makes `registration: 'closed'` plus SSO work.
+brings people in, and that is what makes `registration: 'closed'` plus SSO work.
 
-`createScimUser`/`updateScimUser` refuse a `god`-role account outright (409): the role is
-what grants god mode, and nothing about the instance owner's account is provider-owned. A
-create for an address already linked (`user.scimExternalId` set) is refused the same way —
-it is a retry, not a new person, and must not overwrite the link a first create wrote.
+An account is one `user` row across the instance. What a provider says about a person — its
+own id for them and whether they are active — is a `scim_user` row per (provider, user), where
+`workspace_id` is null for the instance's provider. Groups belong to a provider
+(`scim_group.workspace_id`, null for the instance's), their names are unique within it, and
+their members must be accounts it sees. A create for an address that has an account links
+it. The group mappings are in `scim/mappings.ts`; they and the settings are served from god
+mode (`/god/scim/...`) and, for a workspace, from `modules/workspaces/` (`/workspaces/:id/scim/...`).
+
+- **The instance's provider** is god's, set up in god mode, and every build has it. Its
+  token reads `scim_<secret>`. The provider sees every account, PUT and PATCH write the name
+  and address, a group maps to any project, and DELETE removes the account the way god mode
+  does (409 for the only owner of a project outside the workspaces they own, whose projects
+  pass to the instance owner).
+  A deactivated account (`user.active` false, written alongside `scim_user.active`) keeps
+  its teams and projects but cannot sign in, and `isAccountDeactivated` makes
+  `authContext`, `/me` and the MCP key check refuse what it already holds.
+  God mode writes `user.active` too (`POST /god/users/:userId/deactivate` and
+  `/reactivate` in `modules/god/`) while the instance's provider does not manage accounts
+  (`accountsManagedByScim` from `@repo/auth`), and answers 409 while it does. Deactivating
+  there also deletes the account's sessions, its MCP OAuth tokens and the pending invites
+  it created; its API keys are kept and answer 401 until it is reactivated. The instance
+  owner and an agent's account are refused (403). The user list and detail carry
+  `activeLock` (`owner`, `agent` or `scim`), the reason the switch is locked, or null.
+- **A workspace's provider**, where a hosted build turns `setWorkspaceScim()` on, decides
+  who is in the workspace, not who has an account, so the same person can be linked by
+  several workspaces. Its token reads `scim_<workspaceId>_<secret>`. It sees the accounts it
+  linked and the people in the workspace's teams (`inWorkspace` in `service.ts`), a name or
+  address it sends is accepted and the account keeps its own, and a group maps to projects
+  of its workspace only. The instance's groups grant nothing in a workspace that set up
+  SCIM of its own (`workspacesWithOwnScim`): `reconcile.ts` leaves them out there, the
+  mapping picker leaves its projects out, and turning that workspace's SCIM on or off
+  reconciles its mapped projects (`reconcileWorkspaceGrants` in `scim/mappings.ts`).
+
+A create first asks the installed policy whether the provider may provision the address
+(`email-policy.ts`, with `workspaceId` null for the instance's). By default it allows any
+address, since only god sets up the instance's provider; a hosted build calls
+`setScimEmailPolicy` with a check against the domains a workspace has verified, and a refused
+address answers 400 `invalidValue`.
+
+Set up per workspace, deactivation (`active: false`) and DELETE take the person out of every
+team of the workspace through `dropWorkspaceMemberships` in `teams/service.ts`, invite memberships
+included, and a team or project they owned alone passes to the workspace owner. Neither
+touches the account or its sessions. A deactivated person stays linked, so the provider can
+turn them back on, and `reconcile.ts` grants them nothing through the groups until then.
+
+The `god`-role account is refused (409), because nothing about the instance owner is
+provider-owned; set up per workspace, so is the workspace owner, who receives what a
+deprovisioned person owned alone. A create for an address the provider already linked
+with an `externalId` is refused the same way — it is a retry, not a new person, and must not
+overwrite the link the first create wrote.
 
 A group member removal arrives in two shapes: `path: 'members'` with the id(s) to drop in
 `value`, or RFC 7644 §3.5.2.2's path filter, `path: 'members[value eq "<id>"]'`, which Okta
@@ -224,7 +439,29 @@ its own: `resource.ts`'s `groupDisplayNames` reads a SCIM User's `groups` attrib
 channel and is read only for a claim, not for authentication. Both funnel into
 `syncEmbeddedGroups`, the same additive-only join a group pushed through `POST /Groups`
 gets — a name missing from a later sync is never removed by this path, only by an explicit
-`PATCH /Groups/:id` or an unmapping in god mode.
+`PATCH /Groups/:id` or an unmapping in the workspace settings.
+
+## Issue agent runs
+
+`GET /issues/:issueId/agent-runs` reads triggered runs with cursor pagination. Both
+`work_items read` and `ai_agents read` in the issue's current project are required.
+Runs keep their original project, so a moved issue does not expose its former project's
+prompts or traces. `/issues/:issueId/agent-runs/:runId/trace` reads the latest recorded
+attempt of that run, or the one named by `traceId`. Each trace links to the previous recorded
+attempt. A missing latest trace returns null; an unknown or unrelated `traceId` returns 404.
+Both permission checks and the read use the same resolved project id. Other people's chat
+traces stay private.
+External runners reporting run events also retain messages, tool inputs/results and a
+local Codex session link per attempt. `GET /agent-runs/:runId/trace?attempt=N` uses
+both read permissions in the original project and excludes moved issues. It also
+serves scheduled/manual runs without an issue. The latest recorded attempt is the default. `GET /agent-runs/:runId/internal-trace` is its counterpart for an internal run: the Mastra trace of the run, read by the run alone, with the same permissions. The runner queue lists active and past runs of internal and external agents; `runId` narrows it to one authorized run for the detail pane. External transcripts follow the instance trace retention window after the run finishes; pending runs and final results are retained.
+`POST /agent-runs/:runId/events` accepts only the calling agent's current executing,
+unexpired attempt. Event offsets deduplicate retries and reject gaps. Transcripts
+stop recording after 2,000 events or 1 MB; acknowledgements continue so the runner
+can report its final result. A Codex UUID forms the local `codex://threads/` link;
+no supplied URL is accepted. The event-capable runner also sends the attempt number
+on heartbeat and result calls, so a reclaimed attempt rejects the old process.
+Legacy clients may omit this field for compatibility.
 
 ## Security
 
@@ -247,7 +484,13 @@ bun run db:migrate:test               # migrate it (repo root)
 bun run test                          # from apps/api, or at root via turbo
 ```
 
-The `test` script loads `--env-file=../../.env.test`. The attachments test also needs
+The `test` script loads `--env-file=../../.env.test` and runs the files in 5 workers. Each
+worker uses its own copy of the test database (`<name>_1` … `<name>_5`), which
+`src/__tests__/preload.ts` makes afresh when the worker starts, so nothing may be connected to
+the test database at that moment. A worker holds up to 20 Postgres connections (the
+`@repo/db` client and the Mastra store) and Postgres allows 100 by default, hence 5.
+`bun test <path>` without `--parallel` runs on the test database itself. The same preload
+hashes passwords with scrypt at its lowest cost. The attachments test also needs
 RustFS + `S3_*` in `.env.test` (`docker compose -f docker-compose.dev.yml up -d` creates
 the bucket); the Docker test gate starts its own throwaway RustFS.
 
@@ -278,6 +521,11 @@ directly). Helpers in `src/__tests__/helpers/`: `api` (anonymous client), `authe
 - The first `signUpTestUser` in a test is `god` (fresh DB per `resetDb`). To act as a
   plain user, create the god user first and act as the second.
 - Don't hardcode ids or the "-42" sequence — read them from the create response.
+- A test that runs an internal agent against a model leaves its spans in the trace
+  exporter, which writes them in batches up to 5 s later. By then the next test has reset
+  the database and reused the ids, so the late spans count as that test's runs. Flush them
+  before the test ends, in `afterEach` or right after the run:
+  `await getMastra().observability.flush()`.
 
 ## Rules
 
@@ -285,6 +533,45 @@ directly). Helpers in `src/__tests__/helpers/`: `api` (anonymous client), `authe
   either. The web app never imports these packages; it uses this API over HTTP.
 - CORS `origin` is the `trustedOrigins` list exported by `@repo/auth` — do not re-parse
   `APP_URL` here.
+- A state-changing request that carries the session cookie must come from a trusted
+  origin or the api's own; the `onRequest` guard in `app.ts` refuses the rest with 403
+  `CSRF_ORIGIN_REJECTED`. `/api/auth/*` is left to better-auth's own check, and requests
+  authenticated by api key or bearer token are not checked.
 - swagger `/docs` (planner) is separate from better-auth's `/api/auth/reference`; both
   stay reachable without a session.
 - Dev: `bun run dev`. Prod: the Dockerfile migrates, then starts the server; the compose files and the Helm chart run the migrations as a separate step and start only the server.
+
+## Runner queue and execution state
+
+`GET /agent-runs/queue` pages the runs of internal and external agents across the
+caller's readable projects, including archived projects. Both `work_items read` and
+`ai_agents read` are required in each project. Moved issues do not expose their original
+project's prompt. The same queue is narrowed to one project
+(`/projects/:projectKey/agent-runs/queue`), a team (`/teams/:teamId/...`) or a workspace
+(`/workspaces/:workspaceId/...`). Whoever runs the team reads every run of its projects
+there and in the run traces without a role in the project; the team's queue is theirs and
+the workspace managers', the workspace's its owner's and admins'. Each scope also answers
+`.../agent-runs/in-flight`: the internal runs in flight in the workspace and the
+workspace's limit on them.
+
+Two limits hold the runs of internal agents in flight; an external agent's run counts
+against neither. The instance's (`maxConcurrentRuns` in the god mode agent settings, 5 by
+default, 0 for none) is applied in `claimDueRuns`, which claims under an advisory lock so
+api replicas take only the free slots between them. It counts only the runs the api has
+claimed (`claimed_at`): a deferred run and one in retry backoff leave their slot to the
+other workspaces. A workspace's (`workspace.max_concurrent_runs`, set by its owner, lowered
+by `setLimitsProvider`) is applied in the poller, which defers a claimed run past it; there
+a run in retry backoff keeps its slot, so the older runs keep their turn.
+
+The stored `status` keeps the runner protocol's `pending` value. `executionState`
+is `running` only after admission succeeds and while its lease is valid; it is
+`queued` during delays, retry backoff and after lease expiry. Terminal states retain
+their names. `execution_started_at` is cleared on claim, defer, retry and completion,
+and set before execution is handed out. A heartbeat can restore the marker for a
+claimed external run that was already in flight when this column was added.
+
+`runnerQueue:1` is a user-scoped sync marker. It combines the `runner-queue:` revisions
+of the projects a queue may list to the user, those of the teams they run included, with
+lease expiry, runner presence and the internal runs in flight in those projects'
+workspaces, so time-based state changes are visible without a write. The queue and issue run panel share this scope.
+A runner being online is separate from a run holding an execution lease.

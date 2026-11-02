@@ -1,7 +1,9 @@
 import { t } from 'elysia';
+import { agentExecutionState } from '#modules/agents/model';
 import { ActivityPayloadResponse } from '#shared/activity';
 import { DevelopmentLinkResponse } from '#modules/git/model';
-import { isoDate } from '#shared/schemas';
+import { AgentTraceDetailResponse } from '#modules/agents/core/model';
+import { instantQuery, isoDate } from '#shared/schemas';
 
 // Ceiling of every markdown text written on an issue: the description, a comment
 // and a custom field value. Each of them is scanned for mentions.
@@ -322,13 +324,32 @@ export const IssueSearchHitResponse = t.Object({
   initiativeId: t.Nullable(t.Number()),
   cycleId: t.Nullable(t.Number()),
   parentId: t.Nullable(t.Number()),
+  parent: t.Nullable(t.Object({ id: t.Number(), identifier: t.String(), title: t.String() })),
   assigneeUserId: t.Nullable(t.String()),
   delegateUserId: t.Nullable(t.String()),
   priority: t.Nullable(t.String()),
   dueDate: t.Nullable(t.String()),
+  estimatePoints: t.Nullable(t.Number()),
+  estimateMinutes: t.Nullable(t.Number()),
+  loggedMinutes: t.Number(),
   labelIds: t.Array(t.Number()),
   archived: t.Boolean(),
+  createdAt: t.String(),
+  updatedAt: t.String(),
+  statusSince: t.String(),
+  completedAt: t.Nullable(t.String()),
 });
+
+export const CrossProjectIssueHitResponse = t.Composite([
+  IssueSearchHitResponse,
+  t.Object({
+    projectId: t.Number(),
+    projectRef: t.String(),
+    projectKey: t.String(),
+    projectName: t.String(),
+    teamName: t.String(),
+  }),
+]);
 
 // FeedItemRow from activity.ts: one timeline entry (comment or change-log).
 // kind is the FeedKind union (a string).
@@ -527,6 +548,19 @@ export const searchIssuesQuery = t.Object({
   limit: t.Optional(t.Numeric({ description: 'Max results (1-500). Default 50.' })),
 });
 
+export const searchAllIssuesQuery = t.Object({
+  q: t.String({
+    minLength: 1,
+    description:
+      'Case-insensitive substring, matched against the title, description, issue number ("KEY-42" or a bare number), and custom field text.',
+  }),
+  limit: t.Optional(t.Numeric({ description: 'Max results (1-50). Default 20.' })),
+  perProjectLimit: t.Optional(
+    t.Numeric({ description: 'Max results from one project (1-50). Default 5.' }),
+  ),
+  excludeProjectId: t.Optional(t.Numeric({ description: "Leave out this project's issues." })),
+});
+
 export const listIssuesQuery = t.Object({
   columnId: t.Optional(t.Numeric({ description: 'Exact column (state) id.' })),
   typeId: t.Optional(t.Numeric({ description: 'Exact issue type id.' })),
@@ -541,15 +575,69 @@ export const listIssuesQuery = t.Object({
   labelIds: t.Optional(t.String({ description: 'CSV of label ids; the issue must carry all.' })),
   dueFrom: t.Optional(t.String({ description: "Inclusive earliest due date 'YYYY-MM-DD'." })),
   dueTo: t.Optional(t.String({ description: "Inclusive latest due date 'YYYY-MM-DD'." })),
+  createdFrom: instantQuery('Inclusive earliest creation time.'),
+  createdTo: instantQuery('Exclusive latest creation time.'),
+  updatedFrom: instantQuery('Inclusive earliest last-update time.'),
+  updatedTo: instantQuery('Exclusive latest last-update time.'),
+  blocked: t.Optional(
+    t.String({
+      description:
+        "'true' for issues another issue is blocking while it is still open (not in a " +
+        'completed or canceled column, not archived).',
+    }),
+  ),
   includeArchived: t.Optional(
     t.String({ description: "'true' to include archived issues. Default false." }),
   ),
   limit: t.Optional(t.Numeric({ description: 'Max results (1-500). Default 50.' })),
 });
 
+export const listAllIssuesQuery = t.Composite([
+  t.Pick(listIssuesQuery, [
+    'assigneeUserId',
+    'delegateUserId',
+    'priority',
+    'dueFrom',
+    'dueTo',
+    'createdFrom',
+    'createdTo',
+    'updatedFrom',
+    'updatedTo',
+    'includeArchived',
+    'limit',
+  ]),
+  t.Object({
+    cycleIds: t.Optional(
+      t.String({ description: 'CSV of cycle ids; the issue must be in one of them.' }),
+    ),
+    parentIds: t.Optional(
+      t.String({ description: 'CSV of parent issue ids, to list their subtasks.' }),
+    ),
+    stateTypes: t.Optional(
+      t.String({
+        description:
+          "CSV of column state types: backlog, unstarted, started, completed, canceled. 'backlog,unstarted,started' lists the open issues.",
+      }),
+    ),
+  }),
+]);
+
 export const issueSequenceParams = t.Object({
   projectKey: t.String(),
   sequenceNumber: t.Numeric(),
+});
+
+export const moveIssueBody = t.Object({
+  projectId: t.Integer({
+    description:
+      'The project id to move the issue to, from list_projects. Must be in the same team.',
+  }),
+  columnId: t.Optional(
+    t.Integer({
+      description:
+        'The column (state) id in the target project, from get_project. Left out, the column of the same name or state type is used.',
+    }),
+  ),
 });
 
 export const updateIssueBody = t.Object({
@@ -630,6 +718,10 @@ export const checklistTitleBody = t.Object({ title: ChecklistTitleSchema });
 
 export const createChecklistItemBody = t.Object({ content: ChecklistItemContentSchema });
 
+export const createChecklistItemsBody = t.Object({
+  items: t.Array(createChecklistItemBody, { minItems: 1, maxItems: 100 }),
+});
+
 export const updateChecklistItemBody = t.Object({
   content: t.Optional(ChecklistItemContentSchema),
   done: t.Optional(t.Boolean({ description: 'Whether the item is checked off.' })),
@@ -677,3 +769,48 @@ export const BulkDeletedResponse = t.Object({ deleted: t.Number() });
 export const BoardResponse = t.Object({ issues: t.Array(BoardIssueResponse) });
 
 export const WatchStateResponse = t.Object({ ok: t.Boolean() });
+
+export const issueAgentRunsQuery = t.Object({
+  before: t.Optional(t.Numeric({ minimum: 1, multipleOf: 1 })),
+  limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50, multipleOf: 1, default: 25 })),
+});
+
+export const issueAgentRunParams = t.Object({
+  issueId: t.Numeric(),
+  runId: t.Numeric(),
+});
+
+export const IssueAgentRunPageResponse = t.Object({
+  items: t.Array(
+    t.Object({
+      id: t.Number(),
+      agentId: t.Number(),
+      username: t.String(),
+      kind: t.String(),
+      status: t.String(),
+      executionState: agentExecutionState,
+      trigger: t.String(),
+      prompt: t.String(),
+      output: t.Nullable(t.String()),
+      attempts: t.Number(),
+      lastError: t.Nullable(t.String()),
+      contextTokens: t.Optional(t.Number()),
+      createdAt: t.String(),
+      startedAt: t.Nullable(t.String()),
+      finishedAt: t.Nullable(t.String()),
+      nextAttemptAt: t.String(),
+    }),
+  ),
+  nextCursor: t.Nullable(t.Number()),
+});
+
+export const issueAgentTraceQuery = t.Object({
+  traceId: t.Optional(t.String({ minLength: 1, maxLength: 128 })),
+});
+
+export const IssueAgentRunTraceResponse = t.Nullable(
+  t.Object({
+    ...AgentTraceDetailResponse.properties,
+    previousTraceId: t.Nullable(t.String()),
+  }),
+);

@@ -1,4 +1,5 @@
 {
+  "archived": "Archived",
   "create": {
     "title": "New team",
     "namePlaceholder": "Team name",
@@ -9,6 +10,8 @@
     "submit": "Create team"
   },
   "sections": {
+    "collapse": "Collapse sections",
+    "expand": "Expand sections",
     "info": {
       "title": "Info",
       "description": "The team and your place in it."
@@ -16,6 +19,10 @@
     "projects": {
       "title": "Projects",
       "description": "The projects this team owns."
+    },
+    "templates": {
+      "title": "Project templates",
+      "description": "Saved project settings that new projects start from."
     },
     "members": {
       "title": "Team members",
@@ -48,6 +55,13 @@
     "agents": {
       "title": "AI Agents",
       "description": "The AI agents this team owns, and the projects each of them works in."
+    },
+    "analytics": {
+      "title": "Usage",
+      "description": "What the team's agents spent on models, by agent, project and day."
+    },
+    "queue": {
+      "title": "Agent runs"
     }
   },
   "info": {
@@ -61,10 +75,19 @@
     "leads": "Owners and managers",
     "leadsHint": "People who can manage this team and its projects.",
     "saved": "Team saved",
-    "leaveHint": "You keep the projects you are a member of. To join again an owner has to add you back."
+    "leaveHint": "You keep the projects you are a member of. To join again an owner has to add you back.",
+    "delete": {
+      "action": "Delete team",
+      "hint": "Its members, roles, project templates, invites, skills, tools and integrations are deleted with it. People keep their accounts and their other teams.",
+      "blocked": "Delete the projects and AI agents of the team first.",
+      "title": "Delete {name}?",
+      "description": "<strong>{name}</strong> is deleted with its members, roles, project templates, invites, skills, tools and integrations. People keep their accounts and their other teams. This cannot be undone.",
+      "deleted": "Team deleted"
+    }
   },
   "columns": {
     "project": "Project",
+    "template": "Template",
     "owners": "Owners",
     "members": "Members",
     "created": "Created",
@@ -80,6 +103,7 @@
     "emailPlaceholder": "name@example.com",
     "alreadyMember": "{email} is already in this team",
     "alreadyPending": "{email} already has a pending invite",
+    "domainNotAllowed": "{email} is at a domain this instance doesn't allow",
     "refused": "{email} could not be invited",
     "roleLabel": "Team role",
     "roleHint": {
@@ -92,11 +116,16 @@
     "joinsProject": "Joins the team and {project}",
     "copyLink": "Copy link",
     "copied": "Copied",
+    "resendEmail": "Send email",
+    "resendingEmail": "Sending…",
     "revokeAction": "Revoke invite",
     "revokeTitle": "Revoke invite for {email}?",
     "revokeConfirm": "Revoke invite",
     "revokeDescription": "The link stops working. You can invite them again later.",
-    "pending": "Invited"
+    "pending": "Invited",
+    "expiredAt": "expired {date}",
+    "renew": "Renew",
+    "renewing": "Renewing…"
   },
   "manage": {
     "label": "Manage teams",
@@ -117,9 +146,9 @@
     "search": "Search roles",
     "noMatches": "No role matches “{query}”.",
     "default": "Default",
+    "system": "System",
     "editAction": "Edit role",
     "deleteAction": "Delete role",
-    "defaultUndeletable": "The default role cannot be deleted",
     "deleteTitle": "Delete role \"{name}\"",
     "deleteDescription": "Nothing is on this role. This cannot be undone.",
     "deleteInUse": "This role is still in use. Pick the role everything on it is moved to.",
@@ -133,16 +162,6 @@
     "moveAndDelete": "Move and delete",
     "noTargetRole": "There is no other role to move them to. Create one first.",
     "newRole": "New role",
-    "editorTitleEdit": "Edit role",
-    "editorTitleNew": "New role",
-    "namePlaceholder": "e.g. Contributor",
-    "resourceColumn": "Resource",
-    "toggleActionAll": "Toggle {action} for all resources",
-    "toggleGroupAll": "Toggle all {group} permissions",
-    "toggleActionGroup": "Toggle {action} for {group}",
-    "cellAria": "{resource}: {action}",
-    "saveRole": "Save role",
-    "createRole": "Create role",
     "copyRoles": "Copy roles",
     "pasteRoles": "Paste roles",
     "nothingToCopy": "No custom roles to copy.",
@@ -159,13 +178,29 @@
       "actions": {
         "create": "New",
         "update": "Overwrite",
-        "skip": "Skip (default)"
+        "skip": "Skip (system role)"
       }
     },
     "transferErrors": {
       "invalidJson": "Clipboard does not contain valid JSON.",
       "notAnExport": "Clipboard does not contain a roles export.",
       "empty": "The roles export is empty."
+    }
+  },
+  "templates": {
+    "ownerOnly": "Only a team owner or manager can manage project templates.",
+    "empty": "No project templates yet",
+    "emptyHint": "Save a project as a template, then start new projects from it.",
+    "openProjects": "Go to projects",
+    "deleteAction": "Delete template",
+    "deleteDialog": {
+      "title": "Delete template \"{name}\"?",
+      "description": "Projects created from it stay as they are.",
+      "confirm": "Delete template"
+    },
+    "panel": {
+      "saved": "Saved {date}",
+      "none": "None"
     }
   },
   "panel": {
@@ -219,6 +254,8 @@
     "timeout": "Timeout (s)",
     "optional": "Optional",
     "apiKey": "API key",
+    "from": "From address",
+    "fromHint": "Required for Resend. With SMTP it defaults to the username.",
     "telegramBot": "Telegram bot",
     "telegramBotHint": "The bot that delivers notifications for every project of the team. Members choose their own chat in their preferences. The token is stored encrypted.",
     "botToken": "Bot API token (optional)",
@@ -358,6 +395,8 @@
     "username": "Username",
     "usernamePlaceholder": "e.g. triage-bot",
     "usernameHint": "Letters, digits, dots, dashes, and underscores. Up to 64 characters.",
+    "chat": "Chat",
+    "chatHint": "Lets a member open or continue a chat with this agent. Off, it drops out of the chat selector; mentions, delegations, and schedules still run it.",
     "access": "Availability",
     "accessHint": "Who can give this agent tasks",
     "model": "Model",
@@ -389,8 +428,46 @@
     "runDelay": "Wait before starting",
     "runDelayHint": "Time to keep editing the issue before the agent starts. 0 starts at once.",
     "minutes": "min",
-    "runner": "Runner",
-    "runnerHint": "The process on your machine that executes this agent's tasks",
+    "connection": "Connection",
+    "connectionHint": "How the agent gets its tasks",
+    "deliveryRunner": "Runner",
+    "deliveryRunnerHint": "Your machine asks for tasks",
+    "deliveryUrl": "Endpoint",
+    "deliveryUrlHint": "Your URL receives the tasks",
+    "invocationUrl": "Endpoint URL",
+    "invocationUrlPlaceholder": "https://example.com/agent",
+    "invocationUrlHint": "Gets each task and chat message as a signed POST request.",
+    "invocationUnsaved": "Save to send tasks to this URL.",
+    "invocationSecretOnSave": "Save the URL to get the signing secret.",
+    "invocationSecret": "Signing secret",
+    "invocationSecretHint": "Use it to check the X-Itsaplan-Signature header.",
+    "invocationSecretRotated": "Signing secret regenerated",
+    "invocationRotate": "Regenerate secret",
+    "invocationRotateTitle": "Regenerate the signing secret?",
+    "invocationRotateMessage": "Requests for <v>{name}</v> switch to the new secret right away. Update your endpoint, or it will refuse the next tasks.",
+    "invocationTest": "Test request",
+    "invocationTestHint": "Sends a signed ping to the saved URL.",
+    "invocationTestSend": "Send test",
+    "invocationTestSending": "Sending…",
+    "invocationTestOk": "Answered {status} in {ms} ms",
+    "invocationTestRefused": "Answered {status}. Expected 2xx.",
+    "invocationTestTimeout": "No answer in time. Answer first, then do the work.",
+    "invocationTestUnreachable": "Couldn't reach the endpoint",
+    "invocationHelpOpen": "How to build the endpoint",
+    "invocationHelpTitle": "How to receive tasks at a URL",
+    "invocationHelpVerify": "Check the signature",
+    "invocationHelpVerifyHint": "HMAC-SHA256 of the timestamp, a dot and the raw body, keyed with the signing secret. Refuse requests older than five minutes.",
+    "invocationHelpAccept": "Answer 2xx right away",
+    "invocationHelpAcceptHint": "Do the work after you answer. With any other status, a task comes again later, and a chat message fails at once.",
+    "invocationHelpPayload": "Read the task",
+    "invocationHelpPayloadHint": "The event field says what arrived: a task, a chat message, or a test ping.",
+    "invocationHelpTabRun": "Task",
+    "invocationHelpTabChat": "Chat message",
+    "invocationHelpTabPing": "Test ping",
+    "invocationHelpReport": "Send the result with the agent's key",
+    "invocationHelpReportHint": "While you work, send a heartbeat at least every 5 minutes. Then send the result. You can send a chat answer in parts.",
+    "invocationHelpTest": "Send a test request",
+    "invocationHelpTestHint": "The Connection section shows how your endpoint answered.",
     "runnerWayCli": "Runner CLI",
     "runnerWayCliHint": "Our npm package. Point it at a coding agent, it polls for tasks and reports back. Needs a config file with the agent's key.",
     "runnerWayApi": "Your own code",
@@ -413,7 +490,7 @@
     "runnerHelpTabCustom": "Your own",
     "runnerHelpPiAdapter": "Pi reads .mcp.json through an extension. Install it once: pi install npm:pi-mcp-adapter",
     "runnerHelpCheck": "Check it is connected",
-    "runnerHelpCheckHint": "The Runner section shows Online.",
+    "runnerHelpCheckHint": "The Connection section shows Online.",
     "runnerOnline": "Runner online",
     "runnerOffline": "Runner offline",
     "runnerNever": "No runner yet",
@@ -421,6 +498,8 @@
     "runnerStateOffline": "Offline",
     "runnerStateNone": "Not connected",
     "runnerSeen": "Last seen {time} ago",
+    "runnerStateUrl": "Endpoint",
+    "runnerUrl": "Gets tasks at its URL",
     "actions": "Actions",
     "actionsHint": "What the agent can do in the project",
     "searchActions": "Search actions",
@@ -450,10 +529,17 @@
     "goToTools": "Go to Tools",
     "searchTools": "Search tools",
     "advanced": "Advanced",
-    "advancedHint": "Sampling, step limit, and memory",
+    "advancedHint": "Sampling, reasoning, step and time limits, and memory",
     "temperature": "Temperature",
+    "reasoningEffort": "Reasoning effort",
+    "reasoningEffortDefault": "Provider default",
+    "reasoningEffortLow": "Low",
+    "reasoningEffortMedium": "Medium",
+    "reasoningEffortHigh": "High",
     "optional": "Optional",
     "maxSteps": "Max steps",
+    "runTimeout": "Run time limit (s)",
+    "runTimeoutDefault": "Instance maximum",
     "memory": "Conversation memory",
     "memoryHint": "Recall recent messages within a conversation thread.",
     "memoryCount": "Remember last N messages",
@@ -477,6 +563,7 @@
     "endOfHistory": "End of history",
     "manualTask": "Manual task",
     "scheduledTask": "Scheduled task",
+    "documentTask": "Document comment",
     "failed": "Failed",
     "task": "Task",
     "error": "Error",
@@ -538,5 +625,167 @@
     "projectsHint": "A new project starts with the instance default.",
     "noProjects": "This team has no projects yet.",
     "projectToggleAria": "Toggle MCP access for {project}"
+  },
+  "workspace": {
+    "rail": "Workspaces",
+    "create": "New workspace",
+    "createUnavailableTitle": "More workspaces",
+    "createUnavailableHint": "More workspaces per person are available in Cloud and self-hosted Pro.",
+    "general": "General",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin"
+    },
+    "titles": {
+      "owner": "Workspace owner",
+      "admin": "Workspace admin"
+    },
+    "info": {
+      "title": "Workspace",
+      "description": "The workspace that owns your teams.",
+      "workspace": "Workspace",
+      "workspaceHint": "The name everyone sees for this workspace.",
+      "role": "Your role",
+      "saved": "Workspace saved",
+      "color": "Color",
+      "colorReset": "Use default"
+    },
+    "teamCreation": {
+      "title": "Who creates teams",
+      "description": "Whoever creates a team owns it.",
+      "ownerOnly": "Only the owner changes who creates teams.",
+      "owner": "Only the owner",
+      "managers": "The owner and admins",
+      "members": "Everyone in its teams"
+    },
+    "runLimit": {
+      "title": "Agent runs at once",
+      "description": "How many runs of its agents work at once. The rest wait in the queue. 0 sets no limit of its own.",
+      "descriptionCapped": "How many runs of its agents work at once, up to {max}. The rest wait in the queue. 0 leaves the limit at {max}.",
+      "ownerOnly": "Only the owner changes how many agent runs work at once.",
+      "none": "No limit"
+    },
+    "managers": {
+      "title": "Managers",
+      "description": "The owner and admins manage the workspace.",
+      "ownerOnly": "The owner and admins manage the workspace. Only the owner adds or removes admins.",
+      "person": "Person",
+      "role": "Role",
+      "addAction": "Add admin",
+      "addTitle": "Add admin",
+      "addDescription": "Pick someone from the workspace's teams.",
+      "search": "Search by name or email",
+      "noCandidates": "No one to add",
+      "added": "{name} is now an admin",
+      "removeAction": "Remove admin",
+      "removeTitle": "Remove {name} as admin?",
+      "removeDescription": "They stay in their teams but can't manage the workspace.",
+      "removed": "{name} is no longer an admin"
+    },
+    "scim": {
+      "title": "SCIM",
+      "description": "Let an identity provider add people to this workspace, remove them, and grant project access through its groups.",
+      "saved": "SCIM settings saved",
+      "provisioning": "Provisioning",
+      "provisioningConfigured": "Your identity provider adds people to this workspace and removes them.",
+      "provisioningInstance": "Your identity provider creates, updates and deactivates accounts on this instance.",
+      "provisioningMissing": "Generate a token first.",
+      "token": "Token",
+      "noToken": "No token generated yet",
+      "tokenHint": "The bearer token your identity provider sends. It is shown once; generating a new one stops the old one working.",
+      "generateToken": "Generate token",
+      "replaceToken": "Replace token",
+      "baseUrl": "SCIM endpoint",
+      "baseUrlHint": "Point your identity provider at this address.",
+      "copyBaseUrl": "Copy SCIM endpoint",
+      "groups": "Groups",
+      "groupsHint": "The groups your identity provider has pushed. The list is theirs; what each group grants is set here.",
+      "groupsEmpty": "No groups have been pushed yet.",
+      "memberCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+      "grantsNothing": "grants nothing yet",
+      "editMappings": "Edit access",
+      "roleOwner": "Owner",
+      "roleMember": "Member",
+      "tokenDialog": {
+        "title": "Generate a SCIM token",
+        "description": "The token is shown once and cannot be read back. Any token already in use stops working.",
+        "submit": "Generate",
+        "submitPending": "Generating…",
+        "createdTitle": "Your SCIM token",
+        "createdDescription": "Copy it into your identity provider now. It cannot be shown again.",
+        "copy": "Copy token"
+      },
+      "mappings": {
+        "title": "What {group} grants",
+        "description": "Members of this group join the projects listed here. Removing a project takes away the memberships this group gave it.",
+        "empty": "This group grants nothing yet.",
+        "addProject": "Add a project…",
+        "role": "Role",
+        "roleOwner": "Owner",
+        "roleMember": "Member",
+        "projectRole": "Project role",
+        "defaultRole": "Default role",
+        "remove": "Remove project",
+        "saved": "Group access saved"
+      }
+    },
+    "delete": {
+      "action": "Delete workspace",
+      "hint": "Its teams are deleted with it. People keep their accounts and their other teams.",
+      "blocked": "Delete the projects and AI agents of its teams first.",
+      "title": "Delete {name}?",
+      "description": "<strong>{name}</strong> and its teams are deleted. People keep their accounts and their other teams. This cannot be undone.",
+      "deleted": "Workspace deleted"
+    },
+    "agentUsage": {
+      "title": "AI usage",
+      "description": "What the agents of every team spent on models."
+    },
+    "settingsGroup": "Settings",
+    "modelPrices": {
+      "title": "Model prices",
+      "description": "AI usage costs each model call at these prices, per 1M tokens. A change recounts past calls too.",
+      "used": {
+        "title": "Used in this workspace",
+        "description": "Models your agents called in the last 90 days, and those you set a price for.",
+        "unpriced": "{count, plural, one {# model has no price, so its calls are left out of the cost.} other {# models have no price, so their calls are left out of the cost.}}",
+        "empty": "No model calls in the last 90 days. A model shows up here once your agents call it."
+      },
+      "all": {
+        "title": "All models",
+        "description": "Built-in prices. Set your own for any model.",
+        "search": "Search models",
+        "noMatch": "No models match “{query}”."
+      },
+      "columns": {
+        "model": "Model",
+        "calls": "Calls",
+        "input": "Input",
+        "output": "Output",
+        "cacheRead": "Cache read",
+        "cacheWrite": "Cache write",
+        "price": "Price"
+      },
+      "source": {
+        "own": "Yours",
+        "builtIn": "Built-in",
+        "none": "No price"
+      },
+      "setPrice": "Set price",
+      "edit": "Edit",
+      "setTitle": "Set price",
+      "editTitle": "Edit price",
+      "perMillion": "USD per 1M tokens.",
+      "builtInPrice": "Built-in: {input} input, {output} output.",
+      "noBuiltInPrice": "This model has no built-in price.",
+      "sameAsInput": "Same as input",
+      "appliesToPast": "Applies to every call of this model in this workspace, past ones too.",
+      "useBuiltIn": "Use built-in price",
+      "removePrice": "Remove price",
+      "save": "Save price"
+    },
+    "queue": {
+      "title": "Agent runs"
+    }
   }
 }

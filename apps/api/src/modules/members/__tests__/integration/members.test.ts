@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { authedApi } from '#tests/helpers/app';
+import { authedApi, createProject } from '#tests/helpers/app';
 import { signUpTestUser, type TestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
 import { createRole, listProjectRoles } from '#tests/helpers/roles';
@@ -19,7 +19,7 @@ type Actor = { user: TestUser; api: ReturnType<typeof authedApi> };
 async function setupOwner(): Promise<Actor> {
   const user = await signUpTestUser();
   const api = authedApi(user.cookie);
-  await api.projects.post({ key: 'MKT', name: 'Marketing' });
+  await createProject(api, { key: 'MKT', name: 'Marketing' });
   return { user, api };
 }
 
@@ -28,7 +28,7 @@ async function setupOwner(): Promise<Actor> {
 async function setupOwner2(): Promise<Actor> {
   const user = await signUpTestUser();
   const api = authedApi(user.cookie);
-  await api.projects.post({ key: 'OPS', name: 'Operations' });
+  await createProject(api, { key: 'OPS', name: 'Operations' });
   return { user, api };
 }
 
@@ -105,7 +105,7 @@ describe('members', () => {
       });
     });
 
-    it("puts them on the team's default role when no roleId is given", async () => {
+    it('puts them on the default role when no roleId is given', async () => {
       const owner = await setupOwner();
       const joiner = await addTeamMember(owner);
       const roles = await listProjectRoles(owner.api, 'MKT');
@@ -345,7 +345,7 @@ describe('members', () => {
       expect(row).toMatchObject({ roleId, roleName: 'Editor' });
     });
 
-    it("clears a member's role with roleId null", async () => {
+    it('puts a member back on the default role with roleId null', async () => {
       const owner = await setupOwner();
       const member = await addMember(owner);
       const roleId = await makeRole(owner);
@@ -360,9 +360,26 @@ describe('members', () => {
         .patch({ role: 'member', roleId: null });
       expect(res.status).toBe(204);
 
+      const roles = await listProjectRoles(owner.api, 'MKT');
       const list = await owner.api.projects({ projectKey: 'MKT' }).members.get();
       const row = list.data?.items.find((m) => m.userId === member.user.userId);
-      expect(row?.roleId).toBeNull();
+      expect(row?.roleId).toBe(roles.data!.find((r) => r.isDefault)!.id);
+    });
+
+    it('assigns a system role the instance owner made', async () => {
+      const owner = await setupOwner();
+      const member = await addMember(owner);
+      const system = await owner.api.god.roles.post({ name: 'Viewer', permissions: {} });
+
+      const res = await owner.api
+        .projects({ projectKey: 'MKT' })
+        .members({ userId: member.user.userId })
+        .patch({ role: 'member', roleId: system.data!.id });
+      expect(res.status).toBe(204);
+
+      const list = await owner.api.projects({ projectKey: 'MKT' }).members.get();
+      const row = list.data?.items.find((m) => m.userId === member.user.userId);
+      expect(row).toMatchObject({ roleId: system.data!.id, roleName: 'Viewer' });
     });
 
     it('returns 404 for a userId that is not a member', async () => {

@@ -6,6 +6,7 @@ import {
   ArchiveRestore,
   Check,
   ClipboardCopy,
+  FolderInput,
   GitBranch,
   Globe,
   Share2,
@@ -23,11 +24,13 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useArchiveAction } from '../../hooks/useArchiveAction';
 import { ApplyActionDialog, DeleteIssueDialog, matchedActions } from './IssueActions';
 import { buildIssueBranchName, buildIssuePrompt } from '../../utils/issuePrompt';
+import { writeClipboardText } from '../../utils/clipboard';
 import { useSession } from '@/lib/auth-client';
 import { shareIssuePath } from '@/utils/paths';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ShareDialog from '@/components/common/share/ShareDialog';
+import MoveIssueDialog from './MoveIssueDialog';
 import { useTranslations } from 'next-intl';
 
 // The issue detail Actions: the manual actions whose condition matches this
@@ -57,6 +60,7 @@ export default function IssueActionsBar({
   const { archive, dialog: archiveDialog } = useArchiveAction(project);
   const restoreIssue = useRestoreIssue(project.project.ref);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [confirmingAction, setConfirmingAction] = useState<ActionDef | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -81,7 +85,7 @@ export default function IssueActionsBar({
   const issueActions = canEdit ? matchedActions(actionsQuery.data ?? [], project, issue) : [];
 
   async function copyPrompt() {
-    await navigator.clipboard.writeText(buildIssuePrompt(issue, project, session?.user));
+    await writeClipboardText(buildIssuePrompt(issue, project, session?.user));
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 1500);
@@ -94,7 +98,7 @@ export default function IssueActionsBar({
   }
 
   async function copyBranch() {
-    await navigator.clipboard.writeText(buildIssueBranchName(issue, session?.user));
+    await writeClipboardText(buildIssueBranchName(issue, session?.user));
     toast.success(t('branchCopied'));
   }
 
@@ -209,6 +213,21 @@ export default function IssueActionsBar({
             <Button
               variant="ghost"
               size={btnSize}
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setMoving(true)}
+            >
+              <FolderInput className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('move')}</TooltipContent>
+        </Tooltip>
+      )}
+      {canDelete && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size={btnSize}
               className="text-muted-foreground hover:text-destructive"
               onClick={() => setConfirmingDelete(true)}
             >
@@ -232,6 +251,10 @@ export default function IssueActionsBar({
           onClose={() => setConfirmingDelete(false)}
           onDeleted={onDeleted}
         />
+      )}
+
+      {moving && (
+        <MoveIssueDialog project={project} issue={issue} onClose={() => setMoving(false)} />
       )}
 
       {archiveDialog}

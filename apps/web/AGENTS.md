@@ -14,10 +14,75 @@ Next.js App Router, SSR (not SPA). Tailwind v4 + shadcn/ui. See root `AGENTS.md`
 - The shared layer never imports a feature. `app/` routes stay thin: mount the feature page and
   providers only.
 - **`@/cloud` is the seam for the hosted edition.** It resolves to `src/ce/index.ts`, which
-  exports what a self-hosted instance runs — a screen it does not sell renders nothing. A
-  cloud-only component is imported from there and nowhere else. The hosted build points
-  `CLOUD_UI_ENTRY` at its own module exporting the same names, and `WEB_TRACING_ROOT` at the
-  root its workspace has; unset, both are what this repository needs.
+  exports what a self-hosted instance runs. A cloud-only part is imported from there and
+  nowhere else. `useWorkspaceSections(workspace, core)` returns a workspace's settings menu,
+  shown by `WorkspaceSectionNav`: here the core's sections and previews of the
+  dashboard, the AI budgets and the audit log, and for the owner of email domains, single
+  sign-on and SCIM (`components/common/page/SectionPreview`), while the hosted build adds
+  its own at any position or drops some. One it adds carries in `Component` the
+  page `/workspaces/:id/:sectionId` opens; that page answers 404 only once the workspace and
+  every query in flight have loaded, so a section that waits on a query of its own opens
+  from a direct link. Every section names its group: an `overview` one sits at the top of
+  the menu, a `settings` one in the folding Settings group below, a `history` one below that
+  group, each in the order given.
+  `/workspaces/:id` names no section and opens the first entry of the menu, so the order
+  also decides the page a workspace opens on.
+  `useProjectSettingsSections(project, core)` returns the project's sections: here the
+  core's, while the hosted build adds its own at any position or drops some. Those of the
+  `ai-team` group are listed in the main sidebar's AI Team group, those naming the same `menu`
+  as one entry that opens to them, named by the menu's `sections.settings` messages; the others
+  in the settings sidebar, which lists the groups in the order their first section comes, each
+  named in `nav.groups.<group>`, so a section can open a group of its own. One the build adds
+  carries in `Component` the page `/:team/:projectKey/settings/<slug>` opens, or
+  `/:team/:projectKey/agents/<slug>` in the AI Team group, which answers 404 only once the
+  project and every query in flight have loaded.
+  `NoTeamStart` is the start page of an account with no team and no workspace it owns,
+  which happens while personal workspaces are off; here it says who adds them.
+  `WorkspaceRailActions` sits below the workspace tiles of a rail; here it says where more
+  than one workspace per person is available. `ShellNotice` is a strip under the top bar of
+  the app shell, god mode and the teams pages; here it shows nothing, while the hosted
+  build shows notices about the instance there. `AfterSignIn` is mounted over every page,
+  beside the what's new screen; here it shows nothing, while the hosted build can show a
+  screen there once a session starts. `BrandMark` is the product mark at the top
+  and the bottom of both sidebars; here the core's `ItsAPlanMark`, which the hosted build can
+  mark its edition on. `BrandPanel({ subtitle })` is the panel beside the form on the
+  logged-out screens and the invite screen; here the core's, which the hosted build can
+  replace. `godSections(core)` returns the god mode
+  sections: here the core's and a preview of the audit log, in a `security` group, while
+  the hosted build adds, replaces or drops some. One it adds carries in `Component` the
+  page `/god/<slug>` opens, and may sit in a group of its own: the sidebar lists the groups
+  in the order their first section comes, each named in `sections.godGroups`. The instance's
+  SCIM is set up in god mode; the hosted build that also sets it up per workspace adds
+  `WorkspaceScimSection` through `useWorkspaceSections`. `SignInExtras` sits among the sign-in methods, after the
+  instance's own provider, on the sign-in screen and on the invite screen, where it gets the
+  invited address as `email`; here it adds nothing, while the hosted build offers a sign-in
+  through providers of its own. `SignInPage` is what `/login/<name>` shows, a sign-in page under a
+  name of its own; here every name answers 404, while the hosted build can show the sign-in
+  form there under a title of its own (`AuthLoginForm`'s `title`). `PublicPage({ path })` is what `/p/<path>` shows to
+  anyone, signed in or not, never indexed; here every path answers 404, while the hosted build
+  serves pages of its own there. Those pages and the share pages may be shown in a frame on
+  the sites the instance owner trusts (god mode, General; `GET /embed-sites`), which
+  `src/proxy.ts` writes into `frame-ancestors` beside the app itself; `next.config.ts` refuses a
+  frame to every other page. A sign-in that comes back, or an auth form the server refuses, with
+  a code the core does not know shows the text the build's messages give it under
+  `auth.errors.codes.<code>`.
+  `GodSectionExtras` renders at the end of every god section page, by its slug, for settings the hosted build adds to an existing section; `WorkspaceSectionExtras`
+  does the same on a workspace's own settings pages (`general`, `managers`), with the
+  workspace, and its controls save themselves. `ScheduleDialog` is the dialog that creates
+  and edits an agent schedule: here the core's, while the hosted build opens its own with
+  the same props, with the schedule types it adds and the `options` it keeps on a
+  schedule. The schedule list names such a type by the message
+  `settings.schedules.types.<id>`. `AgentAnalyticsExtras` renders below the panels of an
+  agent dashboard, a team's or a workspace's, with the scope and the window it shows;
+  here a preview of the panels a build adds, which folds to its title and
+  description. `cloudMessages` is the
+  hosted build's English, merged into the catalogue the keys are typed against (a god
+  section's name and blurb go under `sections.god.<slug>` like the core ones), and
+  `loadCloudMessages(locale)` returns its other languages. The i18n request config imports
+  `@/cloud` on the server for the messages, so every component file it exports starts with
+  `'use client'`.
+  The hosted build points `CLOUD_UI_ENTRY` at its own module exporting the same names, and
+  `WEB_TRACING_ROOT` at the root its workspace has; unset, both are what this repository needs.
 
 ## Feature structure & decomposition
 
@@ -63,7 +128,7 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
 - English is the source: `src/i18n/messages.ts` imports it statically, merges the chosen
   language over it, and types every `t('…')`. A new key goes there first or typecheck fails;
   an untranslated one renders its English text.
-- A new namespace needs its file in every language plus an entry in `defaultMessages`.
+- A new namespace needs its file in every language plus an entry in `coreMessages`.
 - A new language: `messages/<code>/`, `src/i18n/locales.ts`, `src/hooks/useDateFnsLocale.ts`,
   and `LOCALES`/`Locale` in `apps/api/src/modules/user-preferences/`. No migration — the `locale`
   column has no CHECK. One written right to left also goes in `RTL_LOCALES`.
@@ -87,6 +152,12 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
 
 - Prefer Server Components and server-side data fetching; reach for client components only for
   interactivity/hooks.
+- **A screen names itself in the browser tab with `useDocumentTitle`.** The shell names the
+  section (`useShellTitle`), a detail page its entity, and an issue side panel its issue over
+  both; `titlePath(...)` builds `Project › Section` and gives null while a part is missing. An
+  entity read that failed passes null, so the tab never names what the screen cannot show.
+  A server-rendered page renders `components/common/DocumentTitle`. Never set `metadata.title`
+  per route: the hook owns `document.title`.
 - A screen that has to stay live calls `useLiveRefresh({ scope, targets })` with a scope from
   `@/utils/revScopes` — never its own polling. `SyncProvider` polls every registered scope in one
   request and invalidates the targets of the ones that moved.
@@ -135,6 +206,11 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
   depend on them change nothing until it is on. One read-only state looks the same everywhere:
   the same icon and the same wording for on and off, in the row the control would have taken —
   reuse the component that already renders it rather than styling a second variant.
+- **A workspace's owner and admins reach its projects and teams without being members.**
+  The API says so with `via: 'workspace'` on the project viewer (`usePermissions().isMember`
+  is false), on a project in the list and on a team. What hangs on the membership itself
+  is left out for them: starring and hiding a project, leaving it or the team, and the
+  project's notification settings. Everything else follows `can()` as for a member.
 - Add shadcn components with `bunx shadcn@latest add <name>` (config in `components.json`).
 - **Don't edit `src/components/ui/`** — those files are generated and re-adding a component
   overwrites them. Style them from the outside instead: every primitive carries a `data-slot`
@@ -153,13 +229,3 @@ next-intl, language from the `NEXT_LOCALE` cookie — no `[locale]` route segmen
   image depends on them.
 - When touching `localStorage`/`window` in a render path (e.g. a `useState` initializer), guard
   with `typeof window === 'undefined'` — client components still server-render.
-
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->

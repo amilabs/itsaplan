@@ -19,7 +19,8 @@
       "signIn": "Connexion",
       "projects": "Projets",
       "lastSeen": "Dernière activité",
-      "email": "E-mail"
+      "email": "E-mail",
+      "active": "Actif"
     },
     "registered": "arrivé {date}",
     "roleGod": "God",
@@ -30,7 +31,20 @@
     "verified": "Vérifié",
     "notVerified": "Non vérifié",
     "open": "Ouvrir le compte",
-    "showAccess": "Afficher l'accès aux projets"
+    "showAccess": "Afficher l'accès aux projets",
+    "activeAria": "Compte actif : {email}",
+    "activeState": {
+      "on": "Actif",
+      "off": "Inactif"
+    },
+    "activeLock": {
+      "owner": "Le propriétaire de l'instance est toujours actif.",
+      "agent": "Le compte d'un agent suit son agent.",
+      "scim": "Votre fournisseur d'identité (SCIM) décide quels comptes sont actifs."
+    },
+    "deactivateTitle": "Désactiver {email} ?",
+    "deactivateBody": "La personne est déconnectée immédiatement et ne peut plus se connecter ni utiliser ses clés d'API tant que vous ne réactivez pas le compte. Ses connexions MCP et les invitations qu'elle a envoyées sont supprimées. Rien d'autre n'est supprimé.",
+    "deactivateConfirm": "Désactiver"
   },
   "userPanel": {
     "instanceOwner": "Propriétaire de l'instance",
@@ -57,6 +71,7 @@
     "deleteConfirm": "Supprimer le compte",
     "deleteConfirmWithProjects": "{count, plural, one {Supprimer le compte et le projet} other {Supprimer le compte et les projets}}",
     "deleteMessage": "<strong>{name}</strong> perd l'accès à cette instance. Les tickets et commentaires rédigés par cette personne sont conservés, sans auteur. Cette action est irréversible.",
+    "deleteWorkspaceNote": "Un espace de travail détenu par ce compte est supprimé avec lui s'il ne contient ni projet ni agent IA. Sinon, il vous revient, avec tout ce que le compte y détenait seul.",
     "soleOwnerTitle": "{count, plural, one {Seul propriétaire d'un projet} other {Seul propriétaire de # projets}}",
     "soleOwnerHint": "{count, plural, one {Une fois le compte supprimé, personne ne pourra le gérer.} other {Une fois le compte supprimé, personne ne pourra les gérer.}}",
     "deleteWithProjects": "{count, plural, one {Supprimer le projet avec le compte} other {Supprimer les projets avec le compte}}",
@@ -155,28 +170,78 @@
     },
     "joined": "a rejoint le {date}"
   },
+  "roles": {
+    "newRole": "Nouveau rôle",
+    "empty": "Aucun rôle système pour l’instant.",
+    "default": "Par défaut",
+    "defaultUndeletable": "Le rôle par défaut ne peut pas être supprimé",
+    "columns": {
+      "role": "Rôle",
+      "permissions": "Autorisations"
+    },
+    "edit": "Modifier le rôle",
+    "delete": "Supprimer le rôle",
+    "deleteTitle": "Supprimer le rôle « {name} »",
+    "deleteDescription": "Cette action est irréversible."
+  },
   "general": {
     "saved": "Valeurs par défaut des projets enregistrées",
     "projectDefaults": "Valeurs par défaut des projets",
     "mcpEnabled": "Activer MCP sur les nouveaux projets",
-    "mcpEnabledHint": "Un nouveau projet est accessible via MCP dès sa création."
+    "mcpEnabledHint": "Un nouveau projet est accessible via MCP dès sa création.",
+    "workspacesSaved": "Paramètres des espaces de travail enregistrés",
+    "workspaces": "Espaces de travail",
+    "personalWorkspaces": "Un espace de travail pour chacun",
+    "personalWorkspacesHint": "Chaque compte reçoit son propre espace de travail, à son nom. Désactivé, chacun travaille seulement dans les espaces de travail où il a été ajouté.",
+    "invites": "Invitations",
+    "inviteSearch": "Suggérer des personnes lors d'une invitation",
+    "inviteSearchHint": "Quand un propriétaire ou un gestionnaire d'équipe saisit une adresse dans la fenêtre d'invitation, les comptes correspondants de tous les espaces de travail de cette instance s'affichent avec leur nom et leur email. Désactivé, il faut saisir l'adresse complète.",
+    "invitesSaved": "Paramètres des invitations enregistrés",
+    "agents": "Agents",
+    "agentsSaved": "Paramètres des agents enregistrés",
+    "embedding": "Intégration",
+    "embedSites": "Sites de confiance",
+    "embedSitesHint": "Les tickets et tableaux partagés publiquement ne s’ouvrent dans un cadre que sur ces sites. Séparez les sites par des virgules.",
+    "embedSitesInvalid": "Saisissez chaque site sous la forme https://example.com, sans chemin.",
+    "embedSaved": "Sites de confiance enregistrés",
+    "traceRetention": "Conserver les traces d'exécution",
+    "traceRetentionHint": "Chaque exécution d'agent enregistre ses appels au modèle et aux outils. Les tableaux de consommation ne comptent que les exécutions conservées.",
+    "traceDays": "{days, plural, one {# jour} other {# jours}}",
+    "traceForever": "Toujours",
+    "maxRunTime": "Durée maximale d'exécution",
+    "maxRunTimeHint": "Durée qu'une exécution d'agent peut prendre avant d'être arrêtée et enregistrée comme échouée. La limite propre d'un agent ne peut pas la dépasser.",
+    "runMinutes": "{minutes, plural, one {# minute} other {# minutes}}",
+    "runSeconds": "{seconds} s",
+    "concurrentRuns": "Exécutions simultanées",
+    "concurrentRunsHint": "Nombre d'exécutions d'agents en même temps sur cette instance. Les autres attendent en file d'attente. Les discussions et les agents externes ne comptent pas. 0 signifie sans limite.",
+    "concurrentRunsInvalid": "Saisissez un nombre entier entre 0 et {max}."
   },
   "authentication": {
     "saved": "Paramètres d'authentification enregistrés",
     "registration": "Inscription",
     "registrationHint": "Qui peut créer un compte sur cette instance.",
+    "registrationPasswordlessNote": "L'inscription et la récupération du mot de passe sont gérées par le fournisseur de connexion.",
+    "inviteTtlDays": "Expiration des invitations (jours)",
+    "inviteTtlDaysHint": "Passé ce délai, le lien d'invitation ne fonctionne plus et, avec l'inscription sur invitation, ne permet plus de créer un compte. Avec 0, les invitations n'expirent pas.",
+    "inviteTtlDaysInvalid": "Saisissez un nombre entier de jours entre 0 et {max}.",
+    "allowedEmailDomains": "Domaines e-mail autorisés",
+    "allowedEmailDomainsHint": "Seules les adresses de ces domaines peuvent créer un compte. Séparez-les par des virgules ou laissez vide pour tout autoriser. Les comptes existants gardent leur accès.",
+    "allowedEmailDomainsInvalid": "Chaque domaine doit avoir la forme example.com, 100 au maximum.",
     "modes": {
       "open": {
         "label": "Ouverte",
-        "description": "Toute personne accédant à la page d'inscription peut créer un compte."
+        "description": "Toute personne accédant à la page d'inscription peut créer un compte.",
+        "descriptionPasswordless": "Toute personne qui se connecte pour la première fois via le fournisseur obtient un compte."
       },
       "invite": {
         "label": "Sur invitation",
-        "description": "Un compte ne peut être créé qu'à partir d'un lien d'invitation."
+        "description": "Un compte ne peut être créé qu'à partir d'un lien d'invitation.",
+        "descriptionPasswordless": "La connexion via le fournisseur ne crée un compte que s'il existe une invitation en attente pour cette adresse."
       },
       "closed": {
         "label": "Fermée",
-        "description": "Aucun nouveau compte. Les comptes existants continuent de se connecter."
+        "description": "Aucun nouveau compte. Les comptes existants continuent de se connecter.",
+        "descriptionPasswordless": "Aucun nouveau compte, même pour une personne venant du fournisseur. Les comptes existants continuent de se connecter."
       }
     },
     "signIn": "Options de connexion",
@@ -246,7 +311,18 @@
     "testing": "Envoi…",
     "testHint": "Envoyer un vrai message avec les paramètres actuels, sans les enregistrer.",
     "testConfigureFirst": "Activez d'abord un fournisseur et renseignez ses identifiants obligatoires.",
-    "testSent": "E-mail de test envoyé à {email}"
+    "testSent": "E-mail de test envoyé à {email}",
+    "smtpAuth": "Authentification",
+    "smtpAuthOptions": {
+      "password": "Mot de passe",
+      "microsoft365": "Microsoft 365 (OAuth)"
+    },
+    "mailbox": "Boîte aux lettres",
+    "tenantId": "ID du locataire (tenant)",
+    "clientId": "ID client",
+    "clientSecret": "Secret client",
+    "clientSecretPlaceholder": "Secret de l’inscription d’application",
+    "microsoft365Hint": "Se connecte en tant qu’inscription d’application Entra ID au lieu du mot de passe de la boîte, qui peut ainsi garder la MFA. L’application a besoin de l’autorisation d’application SMTP.SendAsApp d’Office 365 Exchange Online avec consentement administrateur, d’un accès à cette boîte dans Exchange et de SMTP AUTH activé sur la boîte."
   },
   "authProvider": {
     "saved": "Fournisseur d'authentification enregistré",
@@ -269,49 +345,5 @@
     "scopes": "Scopes",
     "scopesHint": "Séparés par des espaces. openid est obligatoire ; profile et email renseignent le nom et l'adresse.",
     "oidcRedirectUriHint": "Enregistrez-la comme URI de redirection sur le client de votre fournisseur d'identité. Le fournisseur refuse la connexion si elle ne correspond pas exactement."
-  },
-  "scim": {
-    "saved": "Paramètres SCIM enregistrés",
-    "provisioning": "Provisionnement",
-    "provisioningConfigured": "Votre fournisseur d'identité crée, met à jour et désactive les comptes de cette instance.",
-    "provisioningMissing": "Générez d'abord un token.",
-    "token": "Token",
-    "noToken": "Aucun token généré pour l'instant",
-    "tokenHint": "Le token bearer que votre fournisseur d'identité envoie. Il n'est affiché qu'une fois ; en générer un nouveau invalide l'ancien.",
-    "generateToken": "Générer un token",
-    "replaceToken": "Remplacer le token",
-    "baseUrl": "Point d'accès SCIM",
-    "baseUrlHint": "Faites pointer votre fournisseur d'identité vers cette adresse.",
-    "copyBaseUrl": "Copier le point d'accès SCIM",
-    "groups": "Groupes",
-    "groupsHint": "Les groupes transmis par votre fournisseur d'identité. La liste vient de lui ; ce que chaque groupe accorde se définit ici.",
-    "groupsEmpty": "Aucun groupe n'a encore été transmis.",
-    "memberCount": "{count, plural, =0 {Aucun membre} one {# membre} other {# membres}}",
-    "grantsNothing": "n'accorde rien pour l'instant",
-    "editMappings": "Modifier l'accès",
-    "roleOwner": "Propriétaire",
-    "roleMember": "Membre",
-    "tokenDialog": {
-      "title": "Générer un token SCIM",
-      "description": "Le token n'est affiché qu'une fois et ne peut pas être relu. Tout token déjà en usage cesse de fonctionner.",
-      "submit": "Générer",
-      "submitPending": "Génération…",
-      "createdTitle": "Votre token SCIM",
-      "createdDescription": "Copiez-le dès maintenant dans votre fournisseur d'identité. Il ne sera plus affiché.",
-      "copy": "Copier le token"
-    },
-    "mappings": {
-      "title": "Ce que {group} accorde",
-      "description": "Les membres de ce groupe rejoignent les projets listés ici. Retirer un projet supprime les adhésions que ce groupe y avait accordées.",
-      "empty": "Ce groupe n'accorde rien pour l'instant.",
-      "addProject": "Ajouter un projet…",
-      "role": "Rôle",
-      "roleOwner": "Propriétaire",
-      "roleMember": "Membre",
-      "projectRole": "Rôle dans le projet",
-      "defaultRole": "Rôle par défaut",
-      "remove": "Retirer le projet",
-      "saved": "Accès du groupe enregistré"
-    }
   }
 }
